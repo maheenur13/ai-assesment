@@ -1,0 +1,20 @@
+{
+  "products": [
+    {
+      "sku": "AUD-HD-301",
+      "title": "Studio Monitor Headphones",
+      "description": "Closed-back wired headphones with a flat response for mixing, 3 m coiled cable.",
+      "category": "Audio",
+      "price": 99,
+      "quantity": 15
+    },
+    {
+      "sku": "AUD-MC-302",
+      "title": "USB Podcast Microphone",
+      "description": "Cardioid USB-C condenser microphone with zero-latency monitoring and a desk stand.",
+      "category": "Audio",
+      "price": "79.99",
+      "quantity": 22
+    }
+  ]
+}

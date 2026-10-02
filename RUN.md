@@ -15,6 +15,8 @@ docker compose -f code/docker-compose.yml up --build
 This builds the app, starts Postgres, applies migrations, loads the fixture data, and serves:
 
 - Chat UI: http://localhost:3000/ (order as a guest, or sign in as a demo customer to see order history)
+- Import screen (operator): http://localhost:3000/#import (operator token in the README; the demo
+  file is fetched from GitHub, so it needs internet access)
 - API: http://localhost:3000/api/v1/products
 - API reference: http://localhost:3000/docs
 - Health: http://localhost:3000/readyz
@@ -31,7 +33,7 @@ Without it everything runs except the assistant: `POST /api/v1/chat` (and the ch
 
 ```sh
 docker compose up -d db && cp .env.example .env && pnpm install
-pnpm test        # 146 tests against the shop_test database (no network, fake model)
+pnpm test        # 181 tests against the shop_test database (no network, fake model)
 pnpm eval        # opt-in live-model evals (needs OPENAI_API_KEY)
 pnpm dev         # hot-reload server on :3000
 pnpm dev:web     # chat UI with hot reload on :5173 (proxies /api to :3000)

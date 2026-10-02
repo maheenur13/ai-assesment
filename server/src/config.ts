@@ -17,6 +17,7 @@ const configSchema = z.object({
   RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(300),
   ORDER_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(30),
   CHAT_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(20),
+  IMPORT_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(10),
   // Assistant (OpenAI-compatible chat completions). Without a key the assistant answers 503.
   OPENAI_API_KEY: optional(z.string().min(1)),
   OPENAI_BASE_URL: optional(z.url()).transform((v) => v ?? 'https://openrouter.ai/api/v1'),

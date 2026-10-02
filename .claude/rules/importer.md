@@ -8,7 +8,8 @@ paths:
 
 - Only http/https, ports 80/443, no credentials in the URL. Parse with `new URL()`.
 - Resolve DNS and reject unless every address is public unicast (`ipaddr.process(ip).range()`);
-  connect to the vetted IP (undici `connect.lookup`) to defeat DNS rebinding.
+  connect to the vetted IP (the `lookup` option of `node:http`/`https`, `agent: false`) to defeat
+  DNS rebinding. IP literals skip `lookup`, so they are checked separately. IPv6 must be in 2000::/3.
 - `redirect: 'manual'`, max 3 hops, each re-validated. Timeout, streamed byte cap, content-type
   allowlist, row cap. Never forward auth headers.
 - Client gets a generic error; the specific reason is logged.

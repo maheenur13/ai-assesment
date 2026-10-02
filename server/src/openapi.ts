@@ -14,6 +14,7 @@ import {
 } from './modules/products/schemas.js';
 import { paginationQuery } from './http/pagination.js';
 import { chatBody, chatResponse } from './assistant/routes.js';
+import { createImportBody, importRunSchema } from './importer/routes.js';
 
 /** OpenAPI 3.1 document generated from the same zod schemas that validate requests. */
 export function buildOpenApiDocument(): unknown {
@@ -200,6 +201,40 @@ export function buildOpenApiDocument(): unknown {
       422: errors[422],
       429: errors[429],
       503: problemResponse('Assistant not configured or model provider unavailable'),
+    },
+  });
+
+  registry.registerPath({
+    method: 'post',
+    path: '/api/v1/imports',
+    summary: 'Bulk import products from a link (operator)',
+    description:
+      'Downloads a CSV/JSON file (or a Google Sheet shared by link), maps its columns, validates ' +
+      'every row like POST /products and upserts by SKU. Invalid rows are reported, valid rows ' +
+      'imported. `dryRun` (default true) reports what would change without writing products.',
+    security: secured,
+    request: { body: { content: { 'application/json': { schema: createImportBody } } } },
+    responses: {
+      201: json(importRunSchema, 'The import report'),
+      ...errors,
+      403: problemResponse('Not an operator'),
+      422: problemResponse(
+        'Invalid request, URL not allowed, unreadable file or required columns not found',
+      ),
+      502: problemResponse('The file could not be downloaded'),
+    },
+  });
+  registry.registerPath({
+    method: 'get',
+    path: '/api/v1/imports/{id}',
+    summary: 'Get an import report (operator)',
+    security: secured,
+    request: { params: idParams },
+    responses: {
+      200: json(importRunSchema, 'The import report'),
+      401: errors[401],
+      403: problemResponse('Not an operator'),
+      404: problemResponse('Not found'),
     },
   });
 

@@ -181,6 +181,9 @@ export function App() {
           </div>
         </div>
         <div className="actions">
+          <a className="ghost" href="#import" title="Operator: bulk import products">
+            Import
+          </a>
           <button className="ghost" onClick={newChat} disabled={entries.length === 0}>
             <PlusIcon /> New chat
           </button>
@@ -496,7 +499,7 @@ const CartIcon = () => (
   </span>
 );
 
-function Logo({ large = false }: { large?: boolean }) {
+export function Logo({ large = false }: { large?: boolean }) {
   return (
     <svg className={large ? 'logo large' : 'logo'} viewBox="0 0 32 32" aria-hidden>
       <defs>

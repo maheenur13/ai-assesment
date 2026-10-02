@@ -13,6 +13,9 @@ import type { Db } from './db.js';
 import { authenticate } from './http/auth.js';
 import { errorHandler, notFoundHandler, requireJsonBody } from './http/error-handler.js';
 import { createRateLimiter } from './http/rate-limit.js';
+import { importRoutes } from './importer/routes.js';
+import type { FetchedFile } from './importer/safe-fetch.js';
+import { ImportService } from './importer/service.js';
 import type { Logger } from './logger.js';
 import { customerRoutes } from './modules/customers/routes.js';
 import { CustomerService } from './modules/customers/service.js';
@@ -28,11 +31,13 @@ export interface AppDeps {
   logger: Logger;
   /** Overrides the configured model client (tests inject a scripted fake). */
   llm?: Llm;
+  /** Overrides the importer's URL fetcher (tests serve fixtures without network access). */
+  fetchImport?: (url: string) => Promise<FetchedFile>;
 }
 
 const REQUEST_ID = /^[A-Za-z0-9._-]{1,128}$/;
 
-export function createApp({ config, db, logger, llm }: AppDeps): Express {
+export function createApp({ config, db, logger, llm, fetchImport }: AppDeps): Express {
   const app = express();
   app.disable('x-powered-by');
   app.locals['shuttingDown'] = false;
@@ -133,6 +138,11 @@ export function createApp({ config, db, logger, llm }: AppDeps): Express {
     },
   );
 
+  const imports = new ImportService(db, config.STORE_CURRENCY, model, {
+    timeoutMs: config.LLM_TIMEOUT_MS,
+    ...(fetchImport && { fetch: fetchImport }),
+  });
+
   // Placing orders directly and confirming proposals share one budget.
   const orderLimiter = createRateLimiter(config.ORDER_RATE_LIMIT_PER_MINUTE, 'orders');
   api.use('/products', productRoutes(products));
@@ -142,6 +152,11 @@ export function createApp({ config, db, logger, llm }: AppDeps): Express {
     '/chat',
     createRateLimiter(config.CHAT_RATE_LIMIT_PER_MINUTE, 'chat'),
     assistantRoutes(assistant),
+  );
+  api.use(
+    '/imports',
+    createRateLimiter(config.IMPORT_RATE_LIMIT_PER_MINUTE, 'imports'),
+    importRoutes(imports),
   );
   api.use('/', customerRoutes(customers));
   app.use('/api/v1', api);

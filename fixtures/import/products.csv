@@ -1,0 +1,7 @@
+sku,name,description,category,price,stock,active
+HOM-KT-101,Electric Gooseneck Kettle,"1.0 L kettle with variable temperature (40-100 °C), hold function and a precision spout.",Home,69.00,30,yes
+HOM-FP-102,French Press 1L,"Double-wall stainless steel French press, keeps coffee hot for an hour.",Home,34.50,45,yes
+HOM-GR-103,Burr Coffee Grinder,"Conical burr grinder with 40 grind settings, from espresso to cold brew.",Home,119.00,12,yes
+FIT-YM-104,Cork Yoga Mat,"Natural cork and TPE yoga mat, 183 x 61 cm, 5 mm thick, non-slip when wet.",Fitness,59.90,25,yes
+FIT-RB-105,Resistance Band Set,"Five latex-free resistance bands (5-40 kg) with handles, ankle straps and door anchor.",Fitness,29.99,80,yes
+OUT-HL-106,Rechargeable Headlamp,"400-lumen USB-C headlamp with red light mode and IPX4 rating.",Outdoor,24.95,0,no

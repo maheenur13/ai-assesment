@@ -146,3 +146,21 @@ model OrderProposal {
   @@index([customerId])
   @@map("order_proposals")
 }
+
+/// One bulk import from a URL (Task 3): what was fetched, how columns were mapped, what happened.
+/// Dry runs are stored too, so an operator can review a preview before importing for real.
+model ImportRun {
+  id         String   @id @default(uuid()) @db.Uuid
+  sourceUrl  String   @map("source_url")
+  dryRun     Boolean  @map("dry_run")
+  /// { field: header } plus how it was decided ("aliases" | "model")
+  mapping    Json
+  /// { created, updated, unchanged, failed }
+  counts     Json
+  /// [{ row, sku, action, errors? }]
+  rows       Json
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([createdAt, id])
+  @@map("import_runs")
+}

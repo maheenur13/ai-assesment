@@ -1,0 +1,10 @@
+sku,name,description,category,price,stock,active
+BAD-001,Missing Price,"No price given",Home,,5,yes
+BAD-002,Comma Decimal Price,"Price written with a decimal comma",Home,"12,99",5,yes
+BAD-003,Negative Stock,"Stock below zero",Home,10.00,-4,yes
+BAD-004,Unknown Active,"Active flag is not yes/no",Home,10.00,5,maybe
+bad sku with spaces,Bad SKU,"SKU has spaces",Home,10.00,5,yes
+BAD-006,,"Name is empty",Home,10.00,5,yes
+DUP-007,Duplicate First,"First row with this SKU wins",Home,10.00,5,yes
+DUP-007,Duplicate Second,"Second row with the same SKU is reported",Home,11.00,5,yes
+OK-009,Valid Row Among Bad Ones,"This row is fine and must still be imported",Home,10.00,5,yes

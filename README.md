@@ -2,11 +2,13 @@
 
 This is a minimal e-commerce backend (products, customers, orders) with an LLM shopping assistant.
 Customers can search the catalog, check their orders and place orders by chatting, through the API
-or a small chat UI. A later task adds operator bulk import. It is built over four time-boxed tasks;
-this README describes the **current state (Task 2)**.
+or a small chat UI, and the store operator can add products in bulk by pasting a link to an
+existing product list (CSV, JSON or a Google Sheet). It was built over four time-boxed tasks; this
+README describes the **final state (Task 3)**.
 
 - **Run it:** see [RUN.md](RUN.md). It's one command, and the database is seeded automatically.
 - **Chat UI:** http://localhost:3000/ (pick a demo customer; the assistant needs a model key).
+- **Import screen (operator):** http://localhost:3000/#import
 - **API reference:** http://localhost:3000/docs (generated from the request schemas). The raw
   spec is at `/api/v1/openapi.json`.
 - **Why it is built this way:** see [docs/decisions.md](docs/decisions.md), which also cites the
@@ -23,6 +25,8 @@ Express 5 app (TypeScript, ESM)
 ├── assistant/   llm.ts (OpenAI-compatible client, the only model-specific code) · tools.ts
 │                (catalog tools → ProductService, order tools → OrderService) · service.ts
 │                (prompt, bounded tool loop, conversations) · routes.ts (POST /api/v1/chat)
+├── importer/    safe-fetch.ts (SSRF-safe download) · parse.ts (CSV/JSON → rows, column
+│                aliases) · service.ts (mapping, validation, SKU upsert, report) · routes.ts
 ├── openapi.ts   OpenAPI 3.1 document built from the same zod schemas
 ├── seed.ts      idempotent fixture loader (runs on every start)
 └── web/dist     the chat UI (React + Vite, built from web/src), served as static files
@@ -48,6 +52,8 @@ services as the REST API, so authorization and business rules can't be bypassed 
 | GET    | `/api/v1/orders`, `/api/v1/orders/{id}` | customer          | the caller's own orders only; others → 404                                                                                          |
 | POST   | `/api/v1/chat`                          | anyone            | assistant; `{conversationId?, message}` → `{conversationId, reply, products, proposal?, order?}`; order tools need a customer token |
 | POST   | `/api/v1/order-proposals/{id}/confirm`  | customer or guest | places an order the assistant proposed; single-use, re-checks price and stock. Guests send `{conversationId}`                       |
+| POST   | `/api/v1/imports`                       | operator          | bulk import from a link: `{url, dryRun = true}` → 201 + report (per-row results); see below                                         |
+| GET    | `/api/v1/imports/{id}`                  | operator          | a stored import report                                                                                                              |
 | GET    | `/`                                     | anyone            | chat UI                                                                                                                             |
 
 Errors are always `application/problem+json` (RFC 9457). Validation errors carry JSON Pointers, for
@@ -158,9 +164,51 @@ curl -s localhost:3000/api/v1/chat -H "$T" -H 'Content-Type: application/json' \
 curl -s -X POST localhost:3000/api/v1/order-proposals/<pid>/confirm -H "$T"   # → 201 + the order
 ```
 
+## Bulk import from a link (Task 3)
+
+The operator pastes a link to where the product list already lives. Open
+http://localhost:3000/#import, paste the operator token, click **Use demo file** (or paste your own
+link), **Preview**, then **Import**.
+
+- **Sources:** any public `http(s)` link to a CSV (comma, semicolon or tab separated) or JSON file
+  (an array of products or `{ "products": [...] }`), a Google Sheets link shared as "anyone with the
+  link" (rewritten to the sheet's CSV export, keeping the tab), or a raw GitHub file. Shopify and
+  WooCommerce product exports work as they are.
+- **Columns** are matched by name first: `sku`/`Variant SKU`, `name`/`Title`, `price`/`Variant
+Price`/`Regular price`, `Body (HTML)`, `Type`, `Status`, `qty` and so on. Only `sku`, `name` and a
+  price are required. If those can't be found and a model key is set, the model is shown **the header
+  names only** (never row values) and suggests a mapping, which must name real headers. The report
+  says which way it went.
+- **Rows** go through the same validation as `POST /products`. Prices like `12.99`, `$1,299.00` or
+  `EUR 5` become cents; a decimal comma (`12,99`) is rejected as ambiguous. HTML in descriptions is
+  reduced to text.
+- **Upsert by SKU:** new SKUs are created, existing ones updated. Only columns present in the file
+  are written, so a price-only sheet doesn't reset stock. Defaults for new products: category
+  `Uncategorized`, stock 0, active. Valid rows are imported, invalid ones reported with reasons
+  (`row`, `sku`, `errors`), and a repeated SKU fails from its second occurrence. Importing the same
+  file again reports everything `unchanged`.
+- **Dry run first:** `dryRun` defaults to `true` and writes nothing but the report. Every report is
+  stored and can be fetched again (`GET /api/v1/imports/{id}`).
+- **SSRF protection** (the server fetches a URL someone typed): only http/https on ports 80/443, no
+  credentials in the URL; every address the host resolves to must be public (loopback, private,
+  link-local/cloud metadata, CGNAT, multicast and IPv6 equivalents are refused, in any spelling such
+  as `http://2130706433/` or `[::ffff:127.0.0.1]`), and the socket connects to the address that was
+  checked, so DNS rebinding can't swap it. Redirects (max 3) are re-checked, https→http is refused,
+  10 s total timeout, 5 MB cap, CSV/JSON/text content types only, 5,000 rows, 10 imports a minute.
+  A refused URL gets a generic 422; the reason is only logged.
+
+```sh
+O='Authorization: Bearer demo-operator-token-change-me-0123456789'
+URL=https://raw.githubusercontent.com/maheenur13/ai-assesment/main/fixtures/import/products.csv
+curl -s localhost:3000/api/v1/imports -H "$O" -H 'Content-Type: application/json' \
+  -d "{\"url\":\"$URL\"}"                     # preview: {"counts":{"created":6,...},"rows":[...]}
+curl -s localhost:3000/api/v1/imports -H "$O" -H 'Content-Type: application/json' \
+  -d "{\"url\":\"$URL\",\"dryRun\":false}"      # import; run it again → all "unchanged"
+```
+
 ## Tests
 
-`pnpm test` runs **146 tests** (plus 15 opt-in live evals, skipped by default) with vitest + supertest against a real Postgres database (`shop_test`),
+`pnpm test` runs **181 tests** (plus 15 opt-in live evals, skipped by default) with vitest + supertest against a real Postgres database (`shop_test`),
 which is reset and re-seeded before every test.
 
 - `tests/api/`: product, customer and order behaviour. This covers validation, pagination, pricing
@@ -175,6 +223,14 @@ which is reset and re-seeded before every test.
   replay) and insufficient stock reported to the model. Guest checkout: details saved and then
   corrected (one guest record), ordering by "yes" and by the button, and order lookup limited to
   the conversation.
+- `tests/importer/`: imports through the API with a fake fetcher that serves `fixtures/import/`:
+  operator-only, dry run writes nothing, create then idempotent re-import, updates that leave absent
+  columns alone, a Shopify export, JSON, a file of broken rows (missing/ambiguous price, negative
+  stock, bad SKU, empty name, duplicate SKU) next to valid ones, formula/markup/prompt-injection
+  cells stored as inert text, the model mapping unknown (German) headers without seeing row values,
+  a model answer naming a nonexistent column, model failure, blocked URL (generic error), download
+  failure (502), broken/empty/oversized files, request validation, the rate limit and the Google
+  Sheets rewrite.
 - `tests/evals/`: opt-in live-model evals (`pnpm eval`). They are skipped in `pnpm test`.
 - `tests/adversarial/`: BOLA (another customer's orders), mass assignment (`customerId`, prices,
   ids), token forgery and wrong roles, malformed or oversized or non-JSON bodies, injection-shaped
@@ -193,6 +249,12 @@ which is reset and re-seeded before every test.
   email sees none of her orders, confirming with another conversation's id, a random id, or as a
   customer (404), a customer's proposal confirmed by a guest, `set_guest_details` called by a
   signed-in customer, invalid or extra (`token`) details, and no REST access without a token.
+  For the importer (`ssrf.test.ts`, against a local HTTP server and a fake DNS table): bad schemes,
+  ports and credentials; 21 internal IP-literal spellings (decimal, hex, octal, short, IPv4-mapped
+  and -compatible IPv6, NAT64, trailing dot, metadata, CGNAT, ULA, link-local, multicast); hostnames
+  resolving to internal addresses, including `localhost` and a mix of public and private answers
+  (rebinding); redirects to internal targets; redirect loops; wrong content type; size caps (declared
+  and streamed); a slow and a silent server (timeout); and that no headers beyond `Accept` are sent.
 
 ## Development with Claude Code
 
@@ -218,7 +280,9 @@ This project was built with Claude Code. The project configuration is committed 
 - Customers are registered by the operator, who hands out an API token. There is no self-signup or
   login flow.
 - Catalog reads are public; ordering requires a customer token.
-- The SKU is the product's immutable business key (Task 3 imports will upsert by SKU).
+- The SKU is the product's immutable business key, and imports upsert by it (exact, case-sensitive).
+- An import sets what the file says: its stock column overwrites current stock (it is the
+  operator's count), and a product missing from the file is left alone, not deactivated.
 - The assistant answers in the catalog's language (English). Prices are always in the store
   currency.
 - In chat, customers are identified by the same API token as the REST API. The chat UI's picker
@@ -246,6 +310,10 @@ This project was built with Claude Code. The project configuration is committed 
 - **Stock reservation at proposal time:** a proposal holds no stock. Stock is checked when proposing
   and again atomically when confirming, so the worst case is a clear 409 at confirmation.
 - **A cart:** a proposal is a one-shot cart. Asking for changes produces a new proposal.
+- **Import extras:** no Excel (`.xlsx`) parsing (export as CSV or use a Google Sheet), no private
+  sources needing credentials (OAuth, signed headers), no scheduled re-sync, no deactivating products
+  missing from the file, no images or variants (each Shopify variant row is its own product, so
+  variant rows without a title fail), and no column-mapping editor in the UI.
 - **Chat UI extras:** no streaming, saved conversation history, full markdown (only `**bold**` is rendered, as text elements, never HTML) or login screen. The
   UI picks a demo customer or takes a pasted token, kept in memory only.
 
@@ -258,6 +326,16 @@ This project was built with Claude Code. The project configuration is committed 
     as Alice, Bob or Carol. That's intended for a local demo (the tokens are already public in
     `fixtures/`), but a real deployment would remove the picker.
   - Not tested: that logs never contain guest emails or chat text. A code review confirmed it.
+- Task 3, accepted Low findings from the security review:
+  - Large imports run one `UPDATE` per changed row inside a 60 s transaction. 5,000 changed rows on a
+    slow remote database could hit the timeout, which rolls the whole import back (nothing partial).
+  - A download failure on a **public** host returns its reason (e.g. `HTTP 404`, `timed out`) to the
+    operator. Blocked (internal) targets never do.
+  - The https→http redirect refusal has no automated test (it would need a local TLS server).
+  - Two simultaneous imports creating the same new SKU: one gets a 409 `import-conflict` and writes
+    nothing. The conflict path is not covered by a test.
+  - Request logs label every request `principal: anonymous`, because the logger's props are computed
+    before authentication (pre-existing since Task 0; the import events themselves are correct).
 - The live evals are a single run per model with coarse checks. They show the grounding works but
   are not a statistically meaningful measurement.
 
@@ -269,9 +347,12 @@ This project was built with Claude Code. The project configuration is committed 
 | npm registry | Packages (installed from the lockfile at build)                                                  | Build                                                          | 0+   |
 | jsDelivr     | CDN serving the pinned `@scalar/api-reference@1.72.4` script for `/docs` (loaded by the browser) | API reference UI                                               | 0+   |
 | OpenRouter   | OpenAI-compatible chat completions with tool calling (`anthropic/claude-haiku-4.5` by default)   | Assistant (catalog Q&A; order lookup and ordering from Task 2) | 1+   |
+| OpenRouter   | Same API, one call per import, only when column names aren't recognised                          | Import column-mapping suggestion (optional)                    | 3    |
+| GitHub       | `raw.githubusercontent.com` hosting `fixtures/import/products.csv`                               | Demo import link                                               | 3    |
+| Google       | Google Sheets CSV export (`docs.google.com`), only if the operator pastes a Sheets link          | Import source                                                  | 3    |
 
-The only outbound call the server makes is to the model provider, and only when `OPENAI_API_KEY` is
-set. Its key is not shipped: it's a model key, so per the brief there is no `.env` in the
+The server makes outbound calls only to the model provider (when `OPENAI_API_KEY` is set) and to
+the link an operator submits for import (any public host they choose, behind the SSRF checks). Its key is not shipped: it's a model key, so per the brief there is no `.env` in the
 submission. Without the key, everything except `/chat` works (the chat UI loads but its replies are 503 errors). The `/docs` page loads a pinned
 script from jsDelivr in the browser; the API works without it.
 
@@ -289,6 +370,7 @@ edited or removed.
 | 0    | 2026-10-03 02:17 | 2026-10-03 03:43 | 86 min   | ~23 min planning and research, ~34 min building and verifying the backend (first push at 03:14), ~29 min adding the Claude Code tooling in `.claude/`                                                                                                     |
 | 1    | 2026-10-03 03:49 | 2026-10-03 04:15 | 26 min   | ~15 min building and testing the assistant (incl. two live eval runs and a fix found by them), ~11 min clean-clone verification and finishing                                                                                                             |
 | 2    | 2026-10-03 04:18 | 2026-10-03 05:14 | 56 min   | ~15 min order tools, propose/confirm and tests; ~12 min UI redesign (on request); ~15 min guest checkout (on request); ~14 min security review, its fixes, live evals and clean-clone check. Commit, tag, push and sync came after 05:14 (see transcript) |
+| 3    | 2026-10-03 05:17 | 2026-10-03 05:49 | 32 min   | ~11 min importer, SSRF-safe fetch and tests; ~6 min security review and its fixes; ~4 min docs; ~6 min import screen redesign (on request); ~5 min plan check and clean-clone verification. Commit, tag, push and sync came after 05:49 (see transcript)  |
 
 **Note on Task 0's history:** `task-0` was first pushed at 03:14. I then decided the Claude Code
 tooling was part of the foundation, so I amended the commit and re-pushed `main` and the `task-0`

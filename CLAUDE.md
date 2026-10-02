@@ -29,11 +29,15 @@ docker compose up --build      # full system from a clean clone (what reviewers 
   loop, conversation storage; 4xx `Problem`s from tools go back to the model as data), `routes.ts`.
 - Ordering by chat = `OrderService.propose` → `confirmProposal` (button endpoint or `confirm_order`
   in a later turn). Never add a tool that places, edits or cancels orders without that confirmation.
-- `web/`: React + Vite chat UI (one component, `fetch` + `useState`). Render model text as text.
+- `server/src/importer/`: `safe-fetch.ts` (SSRF-safe download, injectable policy for tests),
+  `parse.ts` (CSV/JSON → rows, header aliases, value parsing), `service.ts` (LLM header mapping,
+  validation via `createProductBody`, SKU upsert in one transaction, `ImportRun` report), `routes.ts`.
+- `web/`: React + Vite UI, `fetch` + `useState`: `App.tsx` chat, `Import.tsx` operator import
+  (`#import`), switched by hash in `main.tsx`. Render model text and imported text as text.
 - `server/src/openapi.ts` registers every route; keep it in sync when adding endpoints.
 - `server/prisma/` schema + SQL migrations (CHECK constraints are hand-written in migration SQL).
 - `fixtures/seed/` deterministic demo data, loaded idempotently on every start.
-- `tests/api`, `tests/assistant`, `tests/adversarial`: one file per area; each test resets the DB
+- `tests/api`, `tests/assistant`, `tests/importer`, `tests/adversarial`: one file per area; each test resets the DB
   via `resetDb`. Assistant tests script `tests/helpers/fake-llm.ts`; `tests/evals` is live, opt-in.
 
 ## Rules

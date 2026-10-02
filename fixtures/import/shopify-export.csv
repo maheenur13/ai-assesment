@@ -1,0 +1,4 @@
+Handle,Title,Body (HTML),Vendor,Type,Published,Variant SKU,Variant Inventory Qty,Variant Price,Status
+desk-lamp,LED Desk Lamp,"<p>Dimmable LED desk lamp with <strong>5 colour temperatures</strong> and a USB-A charging port.</p>",BluBird,Home,TRUE,HOM-DL-201,18,"$45.00",active
+monitor-arm,Single Monitor Arm,<p>Gas-spring arm for 17-32 inch monitors up to 9 kg. VESA 75/100.</p>,BluBird,Computing,TRUE,CMP-MA-202,9,"$89.00",active
+cable-box,Cable Management Box,<p>Hides a power strip and cables; flame-retardant ABS.</p>,BluBird,Home,FALSE,HOM-CB-203,40,"$19.99",draft

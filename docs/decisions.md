@@ -238,6 +238,75 @@ an account. Chosen over "sign in required" and a chat sign-in button.
   D24's "anonymous callers get no order tools" no longer holds: they get the order tools, which
   refuse with "checkout details required" until `set_guest_details` has run.
 
+## Task 3 — Bulk import from a pasted link
+
+**D29. A link, fetched by the server, not a file upload.** The brief says "pasting a link to where
+their product list already lives", so the operator pastes a URL and the server downloads it. That
+covers the places product lists really live: a Google Sheet (share link rewritten to its CSV export,
+keeping the `gid` tab), a store export (Shopify, WooCommerce) or any CSV/JSON hosted somewhere public.
+Excel files and sources behind a login are excluded (README). It is a REST endpoint
+(`POST /api/v1/imports`, operator-only) plus a small screen in the existing React app (`#import`),
+which also lets reviewers try it without curl.
+
+**D30. SSRF is the main risk, so the fetcher is built around the OWASP SSRF cheat sheet (API7).**
+
+- `new URL()` parsing, http/https only, ports 80/443, no `user:pass@`.
+- Every address the host resolves to must be public: `ipaddr.process(ip).range() === 'unicast'`,
+  and IPv6 must also be inside global unicast `2000::/3`. The security review found that ipaddr.js
+  calls the deprecated IPv4-compatible form `::7f00:1` "unicast", hence the second check. One
+  private answer among public ones rejects the host.
+- The vetted address is the one connected to: the check runs inside the `lookup` hook of
+  `node:http`/`node:https`, with `agent: false` so no pooled socket is reused. A second DNS answer
+  (rebinding) is never consulted. Node skips `lookup` for IP literals, so those are checked when
+  the URL is parsed (the WHATWG parser already normalises `2130706433`, `0x7f.1` and similar).
+- Redirects are followed by hand (max 3), each hop re-validated; https→http is refused.
+- One 10 s deadline covers connect, headers, body and all hops; 5 MB cap (declared length and
+  streamed); content-type allowlist; only an `Accept` header is sent.
+- The client gets one generic 422 for any refused URL; the reason is logged (`import.blocked`).
+- Built on the standard library instead of undici (the plan's first choice): `http.get` with
+  `lookup` gives the same pinned connection with no extra dependency. `ipaddr.js` is the one added
+  dependency for address classification, because writing the range tables by hand is error-prone.
+- The plan's `IMPORT_ALLOWED_HOSTS` dev override was dropped: it would be a switch that turns the
+  protection off, and tests inject the fetcher or the address policy instead.
+- Tests run against a local HTTP server with an injected DNS table and a policy that allows exactly
+  that one test address; everything else goes through the production check.
+
+**D31. Columns: deterministic aliases first, the model only as a fallback, and only for headers.**
+Header names are normalised and matched against aliases of common exports (`Variant SKU`, `Body
+(HTML)`, `Regular price`, ...). If `sku`, `name` or a price is still missing and a model key is set,
+the model is asked once, through a `map_columns` tool call, to map **header names only**. Row values
+never reach the provider (privacy, cost, and the model can't alter data: LLM06). Its answer is
+validated against the file's actual headers; anything else falls back to a 422 that lists the
+headers found. Without a key the import still works for recognised formats.
+
+**D32. Rows use the REST API's validation, and the import is an upsert by SKU.**
+
+- Each row is converted (prices `12.99`/`$1,299.00` → cents; a decimal comma is rejected as
+  ambiguous rather than guessed; yes/no/active/draft → `isActive`; HTML → text) and validated with
+  `createProductBody`, the same schema as `POST /products`. No new rules to keep in sync.
+- Valid rows are imported and invalid rows reported, instead of all-or-nothing: an operator with a
+  1,000-row sheet and three typos should get 997 products and a list of three fixes. The duplicate
+  of a SKU within a file fails (first one wins).
+- Updates write only the columns the file has, so a price-only sheet doesn't zero stock. The
+  compare and the writes run in one transaction, so the report matches what was written, and a
+  concurrent import creating the same SKU gets a 409 with nothing written.
+- `dryRun` defaults to `true`: the safe action is the default, and the UI enables **Import** only
+  after a preview of the same link. Every run, dry or not, is stored as an `ImportRun` (mapping,
+  counts, per-row results) so it can be fetched again.
+- Re-importing the same file reports everything `unchanged`: compare-then-write makes the import
+  idempotent without extra bookkeeping.
+
+**D33. Imported text is untrusted data.** Spreadsheet formulas (`=HYPERLINK(...)`) are stored as
+plain text; there is no CSV export that could hand them back to a spreadsheet. HTML is stripped for
+readability only. This is not a sanitiser, and doesn't need to be, because the UI renders all text
+as text. Product descriptions reach the assistant only as JSON tool results that the prompt marks
+as untrusted (D21), and ordering still needs the customer's explicit confirmation in code (D25), so
+an injected description can't place orders. The tests import such a file.
+
+**D34. Limits (API4):** 5,000 rows, 200-character headers (they are shown to the model and echoed
+in errors), 10 imports per minute, a 60 s transaction. Above that, a background job with progress
+reporting would be the next step; it isn't needed for a catalog this size.
+
 ## Sources
 
 - RFC 9457 Problem Details — https://www.rfc-editor.org/rfc/rfc9457.html
@@ -262,3 +331,10 @@ an account. Chosen over "sign in required" and a chat sign-in button.
   https://code.claude.com/docs/en/sub-agents
 - Helmet CSP defaults (`upgrade-insecure-requests`) — https://github.com/helmetjs/helmet#content-security-policy
 - Vite static deploy / build — https://vite.dev/guide/static-deploy , https://vite.dev/guide/build
+- OWASP SSRF Prevention Cheat Sheet — https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html
+- OWASP API7:2023 Server Side Request Forgery — https://owasp.org/API-Security/editions/2023/en/0xa7-server-side-request-forgery/
+- Node.js `http.request` options (`lookup`, `agent`, `signal`) — https://nodejs.org/docs/latest-v22.x/api/http.html#httprequestoptions-callback
+- ipaddr.js (`process`, `range`) — https://github.com/whitequark/ipaddr.js
+- csv-parse options — https://csv.js.org/parse/options/
+- OWASP CSV Injection — https://owasp.org/www-community/attacks/CSV_Injection
+- Shopify product CSV columns — https://help.shopify.com/en/manual/products/import-export/using-csv
