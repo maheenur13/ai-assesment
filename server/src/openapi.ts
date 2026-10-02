@@ -5,7 +5,7 @@ import {
   createdCustomerSchema,
   customerSchema,
 } from './modules/customers/schemas.js';
-import { createOrderBody, orderSchema } from './modules/orders/schemas.js';
+import { createOrderBody, guestConfirmBody, orderSchema } from './modules/orders/schemas.js';
 import {
   createProductBody,
   listProductsQuery,
@@ -153,14 +153,45 @@ export function buildOpenApiDocument(): unknown {
     request: { params: idParams },
     responses: { 200: json(orderSchema, 'The order'), 404: problemResponse('Not found') },
   });
+  registry.registerPath({
+    method: 'post',
+    path: '/api/v1/order-proposals/{id}/confirm',
+    summary: 'Confirm an order the assistant proposed (customer or guest)',
+    description:
+      'Places the order at the proposed prices after re-checking stock and availability. ' +
+      'Single-use: repeating the call returns the same order (`Idempotent-Replayed: true`). ' +
+      'Customers send their bearer token and no body. Guests (no token) send the id of the ' +
+      'anonymous conversation the order was proposed in.',
+    security: [{}, ...secured],
+    request: {
+      params: idParams,
+      body: {
+        required: false,
+        content: { 'application/json': { schema: guestConfirmBody } },
+      },
+    },
+    responses: {
+      201: json(orderSchema, 'Placed (or replayed if already confirmed)'),
+      403: problemResponse('Operator token'),
+      422: errors[422],
+      404: problemResponse("Unknown proposal or another customer's"),
+      409: problemResponse(
+        'Expired, price changed, product no longer available, or insufficient stock',
+      ),
+      429: errors[429],
+    },
+  });
 
   registry.registerPath({
     method: 'post',
     path: '/api/v1/chat',
     summary: 'Ask the shopping assistant (anonymous or customer)',
     description:
-      'Answers come only from catalog tools. Conversations are bound to the caller: an ' +
-      "anonymous conversation can't be continued with a customer token and vice versa.",
+      'Answers come only from tools. With a customer token the assistant can also list the ' +
+      "customer's orders and propose an order, which is placed only after confirmation. " +
+      "Conversations are bound to the caller: an anonymous conversation can't be continued " +
+      'with a customer token and vice versa.',
+    security: [{}, ...secured],
     request: { body: { content: { 'application/json': { schema: chatBody } } } },
     responses: {
       200: json(chatResponse, 'The reply and the products it is based on'),

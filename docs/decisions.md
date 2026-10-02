@@ -140,7 +140,8 @@ The client only sends a new message, so it can't forge history or tool results.
 **D21. Bounded turns (OWASP LLM10).**
 
 - Message limit: 2,000 chars.
-- At most 5 model calls per turn. When the budget runs out, the reply is a fixed "please rephrase"
+- At most 5 model calls per turn, and at most 5 tool calls per model call (extra calls get an error
+  result and are not run; added in Task 2 after the security review). When the budget runs out, the reply is a fixed "please rephrase"
   and the stored history stays well-formed.
 - One `LLM_TIMEOUT_MS` (25 s) budget covers the whole turn, below the server's 30 s request timeout.
 - Rate limit: `CHAT_RATE_LIMIT_PER_MINUTE` (20) per customer, or per IP for anonymous callers.
@@ -157,6 +158,85 @@ no network calls. The fake replays scripted tool calls and records exactly what 
 `pnpm eval` runs 8 coarse checks against the real model (exact price, price filter, out of stock,
 nonexistent product, inactive product, off-topic question, ambiguous question, prompt extraction).
 Results are recorded as measured in the README.
+
+## Task 2 — Search, order lookup and ordering by chat
+
+**D24. Same `/chat` endpoint, tools chosen by identity.** Search already existed (D18). A customer
+token adds four tools: `list_my_orders`, `get_my_order`, `propose_order`, `confirm_order`. Anonymous
+callers aren't offered them, and the prompt gets one extra line telling the model to ask them to sign
+in. The tools take no identity argument: `customerId` comes from the authenticated request and the
+services scope every query by it (D6), so another customer's order id is a plain "not found", and a
+smuggled `customerId` argument fails the strict schema. There are no update, cancel or delete tools
+(OWASP LLM06 excessive agency).
+
+**D25. Ordering is two steps: propose, then confirm.**
+
+- `propose_order` validates and prices the order server-side, without reserving stock, and stores an
+  `OrderProposal`. It is bound to the customer and the conversation, and expires after 15 minutes.
+  The chat response returns it as `proposal` so a client can show the exact items and total.
+- There are two ways to confirm, and both need an explicit action from the customer:
+  - the **Confirm button**, which calls `POST /api/v1/order-proposals/{id}/confirm`;
+  - the customer saying "yes" in a **later message**: `confirm_order` refuses a proposal made in the
+    same model turn. Without that rule, text injected into a product description could make the
+    model propose and confirm in one turn. The test for this uses exactly that injection.
+- `confirm_order` also needs the customer's **own message in that turn** to be an explicit
+  confirmation ("yes", "confirm", "place it", "go ahead", …, and none of "no", "wait", "cancel",
+  "don't"). This is checked in code (`isExplicitConfirmation`), not by the model. The security
+  review found the gap: text injected into tool results stays in the history and could steer the
+  model to confirm on the next turn after a neutral message like "hmm, let me think". Injected text
+  can steer the model, but it can't change what the customer typed. The keyword check is a
+  heuristic: an unusual phrasing like "ship it" makes the model ask again, and the Confirm button
+  always works.
+- Confirming runs the normal `OrderService.create`, so stock, availability and the atomic decrement
+  (D7) apply unchanged. The price must still equal the proposed price, otherwise it's a 409
+  `price-changed`: the customer is never charged more than they agreed to. Expired → 409, inactive
+  product → 409 `proposal-invalid`, not enough stock → 409 `insufficient-stock`.
+- **Single-use** comes from the idempotency machinery (D7): the order is created under an internal key
+  `proposal <id>`, so double clicks and concurrent confirmations all get the same order (tested with
+  5 parallel calls). The key contains a space, which the `Idempotency-Key` header grammar doesn't
+  allow, so a client can't take that key first.
+- Why not let the model place orders directly with a confirmation phrase in the prompt? Because the
+  prompt is not a security boundary (LLM01/LLM07). The rule has to be enforced in code.
+
+**D26. Service errors go back to the model as data.** A 4xx `Problem` thrown inside a tool
+(insufficient stock, not found, validation, confirmation required) becomes a tool result
+`{error, detail, ...}`, so the model can explain it or correct itself. 5xx errors still fail the
+turn. This replaced per-tool error handling.
+
+**D27. Minimal React chat UI (Vite), served by Express from `web/dist`.** It's the only way to show
+the Confirm button working, which is why it lands in Task 2 (D16). It has an identity picker (the
+demo customers, or paste a token), the chat log, the products behind each reply, and proposal and
+order cards. It uses only `fetch` and React state: no router, state library, UI kit, icon font or web font. Styling is hand-written CSS with light and dark themes and a mobile layout. Icons are inline SVG, so nothing loads from a CDN and the strict CSP still holds.
+Replies are rendered as text, never HTML (LLM05); `**bold**` becomes a `<strong>` element, not markup. It's served from the same origin as the API under
+helmet's default CSP (`script-src 'self'`), so there's no CORS. The token lives only in memory.
+`upgrade-insecure-requests` is turned off because the app is served over plain HTTP, and with it
+Safari fetches the assets over https and the page breaks. React and Vite are dev dependencies: the
+production image only contains the built static files.
+
+**D28. Guest checkout in chat (no token), added after a user request.** Visitors can order without
+an account. Chosen over "sign in required" and a chat sign-in button.
+
+- **A guest is a `Customer` row with `isGuest = true` and no token.** All existing order code
+  (proposals, idempotency, ownership checks, stock) works unchanged on its id. A database CHECK
+  enforces "guest ⇔ no token".
+- **The anonymous conversation is the guest's only key.** `set_guest_details` (offered only in
+  anonymous chats) saves the name and email and attaches the guest to the conversation
+  (`conversations.guest_customer_id`). A guest sees only orders placed through that conversation.
+  The Confirm button sends `{conversationId}` instead of a token; the proposal must belong to that
+  conversation and its guest. This is the same capability model anonymous chats already used
+  (D20). The id is a random UUID returned only to the chat client.
+- **An email is contact data, never identity.** Email is unique among registered customers only (a
+  partial unique index), so a guest may enter any address, including a registered customer's, and
+  gets a separate record with no access to that customer's orders. Nothing looks anything up by
+  email. This keeps the rule "identity never comes from message text" (assistant rules): the guest's
+  identity is the conversation, not what they typed.
+- Guest details are validated with the same schema as `POST /customers` (the tool's JSON Schema is
+  generated in zod's `input` mode because of the lowercase transform). The model is told never to
+  ask for passwords, tokens or payment details. The live eval checks that.
+- Consequences: guest records are never merged or cleaned up (no retention job). A guest who loses
+  the conversation can't look up the order (no email lookup without verification, on purpose).
+  D24's "anonymous callers get no order tools" no longer holds: they get the order tools, which
+  refuse with "checkout details required" until `set_guest_details` has run.
 
 ## Sources
 
@@ -180,3 +260,5 @@ Results are recorded as measured in the README.
   https://code.claude.com/docs/en/best-practices , https://code.claude.com/docs/en/memory ,
   https://code.claude.com/docs/en/hooks-guide , https://code.claude.com/docs/en/skills ,
   https://code.claude.com/docs/en/sub-agents
+- Helmet CSP defaults (`upgrade-insecure-requests`) — https://github.com/helmetjs/helmet#content-security-policy
+- Vite static deploy / build — https://vite.dev/guide/static-deploy , https://vite.dev/guide/build

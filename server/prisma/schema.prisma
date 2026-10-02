@@ -12,16 +12,16 @@ datasource db {
 /// Catalog item. `sku` is the business key used for idempotent bulk import (Task 3).
 /// CHECK constraints (price > 0, stock >= 0) live in the migration SQL.
 model Product {
-  id          String      @id @default(uuid()) @db.Uuid
-  sku         String      @unique
+  id          String                   @id @default(uuid()) @db.Uuid
+  sku         String                   @unique
   name        String
-  description String      @default("")
+  description String                   @default("")
   category    String
-  priceCents  Int         @map("price_cents")
+  priceCents  Int                      @map("price_cents")
   stock       Int
-  isActive    Boolean     @default(true) @map("is_active")
-  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  isActive    Boolean                  @default(true) @map("is_active")
+  createdAt   DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(3)
   /// Generated full-text vector (name > category > description), maintained by Postgres.
   search      Unsupported("tsvector")?
   orderItems  OrderItem[]
@@ -32,17 +32,23 @@ model Product {
   @@map("products")
 }
 
-/// Customers authenticate with an opaque API token; only its SHA-256 hash is stored.
+/// Registered customers authenticate with an opaque API token; only its SHA-256 hash is stored.
+/// Guests (Task 2 chat checkout) have no token and are reachable only through the anonymous
+/// conversation they ordered in. Email is unique among registered customers only (partial unique
+/// index in the migration SQL), so a guest can never claim a registered customer's account.
 model Customer {
   id                 String              @id @default(uuid()) @db.Uuid
-  email              String              @unique
+  email              String
   name               String
-  tokenHash          String              @unique @map("token_hash")
-  tokenPrefix        String              @map("token_prefix")
+  isGuest            Boolean             @default(false) @map("is_guest")
+  tokenHash          String?             @unique @map("token_hash")
+  tokenPrefix        String?             @map("token_prefix")
   createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
   orders             Order[]
   idempotencyRecords IdempotencyRecord[]
-  conversations      Conversation[]
+  conversations      Conversation[]      @relation("ConversationOwner")
+  guestConversations Conversation[]      @relation("ConversationGuest")
+  orderProposals     OrderProposal[]
 
   @@map("customers")
 }
@@ -97,15 +103,46 @@ model IdempotencyRecord {
 /// Assistant chat history, kept server-side so clients cannot forge tool results.
 /// `customerId` is null for anonymous chats; only the same principal may continue a conversation.
 /// `turn` is an optimistic-concurrency counter: concurrent turns on one conversation get a 409.
+/// `guestCustomerId` is set on an anonymous conversation once the visitor gives checkout details.
 model Conversation {
-  id         String    @id @default(uuid()) @db.Uuid
-  customerId String?   @map("customer_id") @db.Uuid
-  messages   Json      @default("[]")
-  turn       Int       @default(0)
-  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
-  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  id              String    @id @default(uuid()) @db.Uuid
+  customerId      String?   @map("customer_id") @db.Uuid
+  guestCustomerId String?   @map("guest_customer_id") @db.Uuid
+  messages        Json      @default("[]")
+  turn            Int       @default(0)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  customer        Customer? @relation("ConversationOwner", fields: [customerId], references: [id], onDelete: Cascade)
+  guestCustomer   Customer? @relation("ConversationGuest", fields: [guestCustomerId], references: [id], onDelete: SetNull)
 
   @@index([customerId])
   @@map("conversations")
+}
+
+enum ProposalStatus {
+  pending
+  placed
+}
+
+/// An order the assistant prepared but the customer has not confirmed yet (Task 2).
+/// Priced server-side at proposal time; confirming re-checks price, stock and availability.
+/// `conversationId` has no foreign key: a proposal can be made in the first turn of a
+/// conversation, before that conversation row is saved.
+/// `createdTurn` lets the confirm tool refuse proposals made in the same model turn.
+model OrderProposal {
+  id             String         @id @default(uuid()) @db.Uuid
+  customerId     String         @map("customer_id") @db.Uuid
+  conversationId String         @map("conversation_id") @db.Uuid
+  createdTurn    Int            @map("created_turn")
+  /// [{ productId, productName, unitPriceCents, quantity }]
+  items          Json
+  totalCents     Int            @map("total_cents")
+  status         ProposalStatus @default(pending)
+  orderId        String?        @unique @map("order_id") @db.Uuid
+  expiresAt      DateTime       @map("expires_at") @db.Timestamptz(3)
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  customer       Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("order_proposals")
 }

@@ -11,6 +11,8 @@ docker compose up -d db        # Postgres on 127.0.0.1:55432 (needed for dev + t
 cp .env.example .env           # once
 pnpm db:migrate && pnpm db:seed
 pnpm dev                       # http://localhost:3000, docs at /docs
+pnpm build                     # server → dist/, chat UI → web/dist (served at / by Express)
+pnpm dev:web                   # chat UI with hot reload on :5173
 pnpm test                      # vitest + supertest against the shop_test database
 pnpm eval                      # opt-in live-model evals (real provider; needs OPENAI_API_KEY)
 pnpm lint && pnpm typecheck && pnpm format:check
@@ -22,8 +24,12 @@ docker compose up --build      # full system from a clean clone (what reviewers 
 - `server/src/http/` cross-cutting HTTP concerns: problem+json errors, auth, pagination, rate limits.
 - `server/src/modules/<name>/{schemas,service,routes}.ts`: zod schemas (validation + OpenAPI),
   service = business logic (the only code that touches Prisma), routes = thin HTTP adapters.
-- `server/src/assistant/`: `llm.ts` (provider boundary), `tools.ts` (zod-typed tools → services),
-  `service.ts` (prompt, bounded tool loop, conversation storage), `routes.ts`.
+- `server/src/assistant/`: `llm.ts` (provider boundary), `tools.ts` (zod-typed tools → services;
+  `guestOnly` tools, i.e. `set_guest_details`, are offered only in anonymous chats), `service.ts` (prompt, bounded tool
+  loop, conversation storage; 4xx `Problem`s from tools go back to the model as data), `routes.ts`.
+- Ordering by chat = `OrderService.propose` → `confirmProposal` (button endpoint or `confirm_order`
+  in a later turn). Never add a tool that places, edits or cancels orders without that confirmation.
+- `web/`: React + Vite chat UI (one component, `fetch` + `useState`). Render model text as text.
 - `server/src/openapi.ts` registers every route; keep it in sync when adding endpoints.
 - `server/prisma/` schema + SQL migrations (CHECK constraints are hand-written in migration SQL).
 - `fixtures/seed/` deterministic demo data, loaded idempotently on every start.

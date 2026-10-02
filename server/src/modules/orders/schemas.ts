@@ -25,23 +25,42 @@ export const createOrderBody = z
   .strict()
   .meta({ id: 'CreateOrder' });
 
+const orderLineSchema = z.object({
+  productId: z.uuid(),
+  productName: z.string(),
+  unitPrice: moneySchema,
+  quantity: z.number().int(),
+  lineTotal: moneySchema,
+});
+
 export const orderSchema = z
   .object({
     id: z.uuid(),
     status: z.enum(['placed']),
-    items: z.array(
-      z.object({
-        productId: z.uuid(),
-        productName: z.string(),
-        unitPrice: moneySchema,
-        quantity: z.number().int(),
-        lineTotal: moneySchema,
-      }),
-    ),
+    items: z.array(orderLineSchema),
     total: moneySchema,
     createdAt: z.iso.datetime(),
   })
   .meta({ id: 'Order' });
+
+export const proposalSchema = z
+  .object({
+    id: z.uuid(),
+    status: z.enum(['pending', 'placed']),
+    items: z.array(orderLineSchema),
+    total: moneySchema,
+    expiresAt: z.iso.datetime(),
+    orderId: z.uuid().optional().describe('Set once the proposal has been confirmed'),
+  })
+  .meta({ id: 'OrderProposal' });
+
+/** Body for a guest's confirmation; customers send no body (their token identifies them). */
+export const guestConfirmBody = z
+  .object({
+    conversationId: z.uuid().describe('The anonymous conversation the order was proposed in'),
+  })
+  .strict()
+  .meta({ id: 'GuestConfirm' });
 
 /** Idempotency-Key header (IETF draft): an opaque client string, typically a UUID. */
 export const idempotencyKeySchema = z
@@ -50,3 +69,4 @@ export const idempotencyKeySchema = z
 
 export type CreateOrderInput = z.infer<typeof createOrderBody>;
 export type OrderDto = z.infer<typeof orderSchema>;
+export type ProposalDto = z.infer<typeof proposalSchema>;

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { parse } from '../http/validate.js';
+import { orderSchema, proposalSchema } from '../modules/orders/schemas.js';
 import { productSchema } from '../modules/products/schemas.js';
 import type { AssistantService } from './service.js';
 
@@ -19,6 +20,13 @@ export const chatResponse = z
     products: z
       .array(productSchema)
       .describe('Authoritative records of the products the assistant looked up in this turn'),
+    proposal: proposalSchema
+      .optional()
+      .describe(
+        'An order prepared in this turn. Show it and let the customer confirm it with ' +
+          'POST /api/v1/order-proposals/{id}/confirm (or by saying so in the next message).',
+      ),
+    order: orderSchema.optional().describe('The order placed in this turn'),
   })
   .meta({ id: 'ChatResponse' });
 

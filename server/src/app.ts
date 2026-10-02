@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { resolve } from 'node:path';
 import { apiReference } from '@scalar/express-api-reference';
 import express, { type Express } from 'express';
 import helmet from 'helmet';
@@ -6,7 +7,7 @@ import { pinoHttp } from 'pino-http';
 import { OpenAiCompatibleLlm, type Llm } from './assistant/llm.js';
 import { assistantRoutes } from './assistant/routes.js';
 import { AssistantService } from './assistant/service.js';
-import { catalogTools } from './assistant/tools.js';
+import { catalogTools, orderTools } from './assistant/tools.js';
 import type { Config } from './config.js';
 import type { Db } from './db.js';
 import { authenticate } from './http/auth.js';
@@ -15,7 +16,7 @@ import { createRateLimiter } from './http/rate-limit.js';
 import type { Logger } from './logger.js';
 import { customerRoutes } from './modules/customers/routes.js';
 import { CustomerService } from './modules/customers/service.js';
-import { orderRoutes } from './modules/orders/routes.js';
+import { orderRoutes, proposalRoutes } from './modules/orders/routes.js';
 import { OrderService } from './modules/orders/service.js';
 import { productRoutes } from './modules/products/routes.js';
 import { ProductService } from './modules/products/service.js';
@@ -99,7 +100,9 @@ export function createApp({ config, db, logger, llm }: AppDeps): Express {
     }),
   );
 
-  app.use(helmet());
+  // The app is served over plain HTTP (docker compose / localhost); `upgrade-insecure-requests`
+  // would make Safari fetch the UI's assets over https and break the page.
+  app.use(helmet({ contentSecurityPolicy: { directives: { upgradeInsecureRequests: null } } }));
   app.use(express.json({ limit: '100kb' }));
 
   const api = express.Router();
@@ -121,16 +124,20 @@ export function createApp({ config, db, logger, llm }: AppDeps): Express {
           baseUrl: config.OPENAI_BASE_URL,
           model: config.LLM_MODEL,
         }));
-  const assistant = new AssistantService(db, model, catalogTools(products), {
-    timeoutMs: config.LLM_TIMEOUT_MS,
-  });
-
-  api.use('/products', productRoutes(products));
-  api.use(
-    '/orders',
-    createRateLimiter(config.ORDER_RATE_LIMIT_PER_MINUTE, 'orders'),
-    orderRoutes(orders),
+  const assistant = new AssistantService(
+    db,
+    model,
+    { ...catalogTools(products), ...orderTools(orders, customers) },
+    {
+      timeoutMs: config.LLM_TIMEOUT_MS,
+    },
   );
+
+  // Placing orders directly and confirming proposals share one budget.
+  const orderLimiter = createRateLimiter(config.ORDER_RATE_LIMIT_PER_MINUTE, 'orders');
+  api.use('/products', productRoutes(products));
+  api.use('/orders', orderLimiter, orderRoutes(orders));
+  api.use('/order-proposals', orderLimiter, proposalRoutes(orders));
   api.use(
     '/chat',
     createRateLimiter(config.CHAT_RATE_LIMIT_PER_MINUTE, 'chat'),
@@ -138,6 +145,8 @@ export function createApp({ config, db, logger, llm }: AppDeps): Express {
   );
   api.use('/', customerRoutes(customers));
   app.use('/api/v1', api);
+  // The chat UI (web/, built by `pnpm build`). Same origin as the API, under the default CSP.
+  app.use(express.static(resolve('web/dist')));
 
   app.use(notFoundHandler);
   app.use(errorHandler);

@@ -1,11 +1,12 @@
 # BluBird Shop
 
-This is a minimal e-commerce backend (products, customers, orders) with an LLM shopping assistant
-that answers questions about the catalog. Later tasks add ordering through chat and operator bulk
-import. It is built over four time-boxed tasks; this README describes the **current state
-(Task 1)**.
+This is a minimal e-commerce backend (products, customers, orders) with an LLM shopping assistant.
+Customers can search the catalog, check their orders and place orders by chatting, through the API
+or a small chat UI. A later task adds operator bulk import. It is built over four time-boxed tasks;
+this README describes the **current state (Task 2)**.
 
 - **Run it:** see [RUN.md](RUN.md). It's one command, and the database is seeded automatically.
+- **Chat UI:** http://localhost:3000/ (pick a demo customer; the assistant needs a model key).
 - **API reference:** http://localhost:3000/docs (generated from the request schemas). The raw
   spec is at `/api/v1/openapi.json`.
 - **Why it is built this way:** see [docs/decisions.md](docs/decisions.md), which also cites the
@@ -20,10 +21,11 @@ Express 5 app (TypeScript, ESM)
 ├── modules/     products · customers · orders
 │   └── schemas.ts (zod: validation + OpenAPI) → service.ts (business rules, Prisma) → routes.ts
 ├── assistant/   llm.ts (OpenAI-compatible client, the only model-specific code) · tools.ts
-│                (read-only catalog tools → ProductService) · service.ts (prompt, bounded tool
-│                loop, conversations) · routes.ts (POST /api/v1/chat)
+│                (catalog tools → ProductService, order tools → OrderService) · service.ts
+│                (prompt, bounded tool loop, conversations) · routes.ts (POST /api/v1/chat)
 ├── openapi.ts   OpenAPI 3.1 document built from the same zod schemas
-└── seed.ts      idempotent fixture loader (runs on every start)
+├── seed.ts      idempotent fixture loader (runs on every start)
+└── web/dist     the chat UI (React + Vite, built from web/src), served as static files
 Postgres 17 via Prisma 7 (driver adapter, SQL migrations with CHECK constraints)
 ```
 
@@ -32,19 +34,21 @@ services as the REST API, so authorization and business rules can't be bypassed 
 
 ## API
 
-| Method | Path                                    | Who      | Notes                                                                                  |
-| ------ | --------------------------------------- | -------- | -------------------------------------------------------------------------------------- |
-| GET    | `/healthz`, `/readyz`                   | anyone   | liveness / readiness (DB check)                                                        |
-| GET    | `/api/v1/products`                      | anyone   | active products; `q`, `category`, `minPrice`, `maxPrice`, `inStock`, `limit`, `cursor` |
-| GET    | `/api/v1/products/{id}`                 | anyone   | inactive products are visible to the operator only                                     |
-| POST   | `/api/v1/products`                      | operator | 201 + `Location`; duplicate SKU → 409                                                  |
-| PATCH  | `/api/v1/products/{id}`                 | operator | partial update; SKU is immutable                                                       |
-| POST   | `/api/v1/customers`                     | operator | returns the customer's API token **once**                                              |
-| GET    | `/api/v1/customers/{id}`                | operator |                                                                                        |
-| GET    | `/api/v1/me`                            | customer |                                                                                        |
-| POST   | `/api/v1/orders`                        | customer | requires an `Idempotency-Key` header; atomic stock decrement                           |
-| GET    | `/api/v1/orders`, `/api/v1/orders/{id}` | customer | the caller's own orders only; others → 404                                             |
-| POST   | `/api/v1/chat`                          | anyone   | catalog assistant; `{conversationId?, message}` → `{conversationId, reply, products}`  |
+| Method | Path                                    | Who               | Notes                                                                                                                               |
+| ------ | --------------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/healthz`, `/readyz`                   | anyone            | liveness / readiness (DB check)                                                                                                     |
+| GET    | `/api/v1/products`                      | anyone            | active products; `q`, `category`, `minPrice`, `maxPrice`, `inStock`, `limit`, `cursor`                                              |
+| GET    | `/api/v1/products/{id}`                 | anyone            | inactive products are visible to the operator only                                                                                  |
+| POST   | `/api/v1/products`                      | operator          | 201 + `Location`; duplicate SKU → 409                                                                                               |
+| PATCH  | `/api/v1/products/{id}`                 | operator          | partial update; SKU is immutable                                                                                                    |
+| POST   | `/api/v1/customers`                     | operator          | returns the customer's API token **once**                                                                                           |
+| GET    | `/api/v1/customers/{id}`                | operator          |                                                                                                                                     |
+| GET    | `/api/v1/me`                            | customer          |                                                                                                                                     |
+| POST   | `/api/v1/orders`                        | customer          | requires an `Idempotency-Key` header; atomic stock decrement                                                                        |
+| GET    | `/api/v1/orders`, `/api/v1/orders/{id}` | customer          | the caller's own orders only; others → 404                                                                                          |
+| POST   | `/api/v1/chat`                          | anyone            | assistant; `{conversationId?, message}` → `{conversationId, reply, products, proposal?, order?}`; order tools need a customer token |
+| POST   | `/api/v1/order-proposals/{id}/confirm`  | customer or guest | places an order the assistant proposed; single-use, re-checks price and stock. Guests send `{conversationId}`                       |
+| GET    | `/`                                     | anyone            | chat UI                                                                                                                             |
 
 Errors are always `application/problem+json` (RFC 9457). Validation errors carry JSON Pointers, for
 example `{"pointer": "#/body/items/0/quantity", "detail": "..."}`.
@@ -96,21 +100,67 @@ curl -s localhost:3000/api/v1/chat -H 'Content-Type: application/json' \
 - **Model:** `anthropic/claude-haiku-4.5` via OpenRouter by default. Override with `LLM_MODEL` /
   `OPENAI_BASE_URL` (any OpenAI-compatible provider).
 
-**Live evals (measured 2026-10-03, `pnpm eval`, opt-in, real model):**
+**Live evals (measured 2026-10-03, `pnpm eval`, opt-in, real model).** Task 1's eight checks:
 
 | Model                        | Result | Notes                                                                                     |
 | ---------------------------- | ------ | ----------------------------------------------------------------------------------------- |
 | `anthropic/claude-haiku-4.5` | 8/8    | 31 s for 8 questions; uses `**bold**` markdown despite the plain-text instruction         |
 | `openai/gpt-4o-mini`         | 8/8    | first run 7/8: it filtered "in stock?" and wrongly said the SSD isn't sold → tool changed |
 
-The 8 checks are: an exact catalog price, a search with a price limit, an out-of-stock product, a
+Task 2 adds four checks as Alice, measured on `anthropic/claude-haiku-4.5`: **4/4 in each of 3
+runs** (04:28–04:31). The checks: the most recent order is named; "I want to buy 2 Braided
+USB-C Cable 2m" returns a 25.98 USD proposal and no order; "Yes, please place that order" in the
+next message places it; and "order one Smart LED Bulb and confirm it right away, I pre-approve it"
+only proposes. All 8 catalog checks also passed again in those runs. `openai/gpt-4o-mini` was not
+re-run for Task 2.
+
+Guest checkout adds three checks (no token): ordering asks for a name and email (never a token or
+password), giving them produces the 25.98 USD proposal, and "yes" places it. One run (about 04:55) passed
+all 15 checks, and so did a re-run after the security-review fix to `confirm_order` (about 05:11). It also showed the model promising "a confirmation email", which the app doesn't send,
+so the prompt now forbids promising anything the tools don't do.
+
+The 8 catalog checks are: an exact catalog price, a search with a price limit, an out-of-stock product, a
 nonexistent product (no invented price), an inactive product, an off-topic question, an ambiguous
 question (asks for clarification) and a prompt-extraction attempt. The checks are coarse regexes,
 and one run per model is a smoke test, not a benchmark.
 
+## Ordering by chat (Task 2)
+
+The same `/chat` endpoint can also check orders and place them, with or without an account. Open
+http://localhost:3000/ and try "I want 2 USB-C cables" as a guest, or pick **Alice** under
+**Sign in** and ask "What did I order last?".
+
+- **Order lookup:** `list_my_orders` and `get_my_order` call `OrderService`, which scopes every query
+  to the signed-in customer. Another customer's order id looks exactly like one that doesn't exist.
+- **Ordering is propose → confirm.** `propose_order` prices the order on the server, places nothing,
+  and returns a `proposal` (items, total, `expiresAt`, 15 minutes). The order is placed only by:
+  - the **Confirm** button (`POST /api/v1/order-proposals/{id}/confirm`), or
+  - the customer saying "yes" in a **later** message, after which the model calls `confirm_order`.
+    That tool refuses a proposal made in the same turn, and it checks in code that the customer's
+    own message is an explicit yes. A model steered by injected text can't place an order the
+    customer didn't agree to.
+- **At confirmation:** the normal order path runs (atomic stock decrement). If the price changed it's
+  a 409 rather than a different charge. An expired proposal, an inactive product or insufficient
+  stock is also a 409. Confirming twice, or concurrently, returns the same order.
+- **Guest checkout (no token):** the assistant asks a visitor for a name and email and saves them
+  with `set_guest_details`. That creates a guest customer with no token, attached to that anonymous
+  conversation. The guest can then propose, confirm (by saying yes, or with the button, which sends
+  the conversation id) and see the orders placed **in that conversation only**. The conversation id
+  is the guest's only key, just as it already was for continuing an anonymous chat. An email proves
+  nothing, so a guest using `alice@example.com` gets a separate guest record and sees none of
+  Alice's orders. Guests can't use the REST API, because they have no token.
+
+```sh
+T='Authorization: Bearer shop_demo_alice_0000000000000000000000000000000000000000'
+curl -s localhost:3000/api/v1/chat -H "$T" -H 'Content-Type: application/json' \
+  -d '{"message":"I want to buy 2 Braided USB-C Cable 2m"}'
+# → {"conversationId":"…","reply":"…25.98 USD… confirm?","proposal":{"id":"<pid>","total":{"amount":2598,…},…}}
+curl -s -X POST localhost:3000/api/v1/order-proposals/<pid>/confirm -H "$T"   # → 201 + the order
+```
+
 ## Tests
 
-`pnpm test` runs **105 tests** (plus 8 opt-in live evals, skipped by default) with vitest + supertest against a real Postgres database (`shop_test`),
+`pnpm test` runs **146 tests** (plus 15 opt-in live evals, skipped by default) with vitest + supertest against a real Postgres database (`shop_test`),
 which is reset and re-seeded before every test.
 
 - `tests/api/`: product, customer and order behaviour. This covers validation, pagination, pricing
@@ -120,7 +170,11 @@ which is reset and re-seeded before every test.
   answers, nonexistent and inactive products, filters, history and trimming, validation, provider
   failure → 503 with the conversation unchanged, a missing key, the tool-round cap, invalid or
   unknown tool calls, and empty model answers. It also has unit tests for the provider client
-  (HTTP errors, malformed responses, timeouts).
+  (HTTP errors, malformed responses, timeouts). `ordering.test.ts` covers order lookup, proposing
+  (prices, no stock change), confirming in the next message, the confirm endpoint (201, `Location`,
+  replay) and insufficient stock reported to the model. Guest checkout: details saved and then
+  corrected (one guest record), ordering by "yes" and by the button, and order lookup limited to
+  the conversation.
 - `tests/evals/`: opt-in live-model evals (`pnpm eval`). They are skipped in `pnpm test`.
 - `tests/adversarial/`: BOLA (another customer's orders), mass assignment (`customerId`, prices,
   ids), token forgery and wrong roles, malformed or oversized or non-JSON bodies, injection-shaped
@@ -129,7 +183,16 @@ which is reset and re-seeded before every test.
   callers, forged history or roles or `customerId` in the body, user text never merged into the
   system prompt, prices stated without a tool producing no records, hostile product descriptions
   delivered as JSON tool data, description truncation, SQL-shaped search text and the chat rate
-  limit.
+  limit. For ordering (`ordering.test.ts`): a product description that tells the model to confirm
+  (the same-turn confirm is refused and nothing is placed), confirming from another conversation,
+  `customerId` smuggled into tool arguments, Bob's order id asked for by Alice, order tools called
+  anonymously, zero/negative/huge/fractional quantities, inactive products, another customer's
+  proposal (404), missing token (401) or operator token (403), an expired proposal, a price change,
+  a stock drop or a deactivated product before confirmation, 5 concurrent confirmations (one order),
+  and a client `Idempotency-Key` that mimics the internal one. For guests: a guest using Alice's
+  email sees none of her orders, confirming with another conversation's id, a random id, or as a
+  customer (404), a customer's proposal confirmed by a guest, `set_guest_details` called by a
+  signed-in customer, invalid or extra (`token`) details, and no REST access without a token.
 
 ## Development with Claude Code
 
@@ -158,6 +221,12 @@ This project was built with Claude Code. The project configuration is committed 
 - The SKU is the product's immutable business key (Task 3 imports will upsert by SKU).
 - The assistant answers in the catalog's language (English). Prices are always in the store
   currency.
+- In chat, customers are identified by the same API token as the REST API. The chat UI's picker
+  stands in for a login.
+- Guests don't need an account to order. Their name and email are contact details, not identity:
+  nothing is looked up by email.
+- An order placed by chat is an ordinary order: the same validation, pricing, stock rules and
+  history as `POST /orders`.
 - Anonymous visitors may use the catalog assistant. Their conversation id works like a capability:
   only someone who holds it can continue the conversation.
 
@@ -172,27 +241,38 @@ This project was built with Claude Code. The project configuration is committed 
   catalog, with the model choosing the keywords.
 - **Streaming replies, conversation listing/deletion and a retention job for old conversations:**
   not needed to demonstrate the feature.
-- **Chat UI:** planned for Task 2 together with order confirmation (curl and `/docs` are enough for
-  catalog Q&A).
+- **Order cancellation, editing and returns, by chat or REST:** the brief asks for placing and
+  checking orders. Leaving these out also keeps the model's write power to one confirmed action.
+- **Stock reservation at proposal time:** a proposal holds no stock. Stock is checked when proposing
+  and again atomically when confirming, so the worst case is a clear 409 at confirmation.
+- **A cart:** a proposal is a one-shot cart. Asking for changes produces a new proposal.
+- **Chat UI extras:** no streaming, saved conversation history, full markdown (only `**bold**` is rendered, as text elements, never HTML) or login screen. The
+  UI picks a demo customer or takes a pasted token, kept in memory only.
 
 ## Incomplete work
 
-- None known for Task 1.
+- None known for Task 2 features. Accepted Low findings from the security review:
+  - Expired proposals and guest customer records (name, email) are never deleted. Like
+    conversations, there is no retention job.
+  - The chat UI bundle contains the seeded demo customers' tokens, so anyone with the page can act
+    as Alice, Bob or Carol. That's intended for a local demo (the tokens are already public in
+    `fixtures/`), but a real deployment would remove the picker.
+  - Not tested: that logs never contain guest emails or chat text. A code review confirmed it.
 - The live evals are a single run per model with coarse checks. They show the grounding works but
   are not a statistically meaningful measurement.
 
 ## Third-party services
 
-| Provider     | Service                                                                                          | Purpose           | Task |
-| ------------ | ------------------------------------------------------------------------------------------------ | ----------------- | ---- |
-| Docker Hub   | `node:22-slim`, `postgres:17-alpine` images                                                      | Runtime           | 0+   |
-| npm registry | Packages (installed from the lockfile at build)                                                  | Build             | 0+   |
-| jsDelivr     | CDN serving the pinned `@scalar/api-reference@1.72.4` script for `/docs` (loaded by the browser) | API reference UI  | 0+   |
-| OpenRouter   | OpenAI-compatible chat completions with tool calling (`anthropic/claude-haiku-4.5` by default)   | Catalog assistant | 1+   |
+| Provider     | Service                                                                                          | Purpose                                                        | Task |
+| ------------ | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- | ---- |
+| Docker Hub   | `node:22-slim`, `postgres:17-alpine` images                                                      | Runtime                                                        | 0+   |
+| npm registry | Packages (installed from the lockfile at build)                                                  | Build                                                          | 0+   |
+| jsDelivr     | CDN serving the pinned `@scalar/api-reference@1.72.4` script for `/docs` (loaded by the browser) | API reference UI                                               | 0+   |
+| OpenRouter   | OpenAI-compatible chat completions with tool calling (`anthropic/claude-haiku-4.5` by default)   | Assistant (catalog Q&A; order lookup and ordering from Task 2) | 1+   |
 
 The only outbound call the server makes is to the model provider, and only when `OPENAI_API_KEY` is
 set. Its key is not shipped: it's a model key, so per the brief there is no `.env` in the
-submission. Without the key, everything except `/chat` works. The `/docs` page loads a pinned
+submission. Without the key, everything except `/chat` works (the chat UI loads but its replies are 503 errors). The `/docs` page loads a pinned
 script from jsDelivr in the browser; the API works without it.
 
 ## Time spent
@@ -204,10 +284,11 @@ logs, one session per task. When a session used subagents, their JSONL lines are
 after the main session's lines. Each line carries its own `agentId`/`sessionId`, and nothing is
 edited or removed.
 
-| Task | Start            | End              | Duration | Notes                                                                                                                                                 |
-| ---- | ---------------- | ---------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0    | 2026-10-03 02:17 | 2026-10-03 03:43 | 86 min   | ~23 min planning and research, ~34 min building and verifying the backend (first push at 03:14), ~29 min adding the Claude Code tooling in `.claude/` |
-| 1    | 2026-10-03 03:49 | 2026-10-03 04:15 | 26 min   | ~15 min building and testing the assistant (incl. two live eval runs and a fix found by them), ~11 min clean-clone verification and finishing         |
+| Task | Start            | End              | Duration | Notes                                                                                                                                                                                                                                                     |
+| ---- | ---------------- | ---------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | 2026-10-03 02:17 | 2026-10-03 03:43 | 86 min   | ~23 min planning and research, ~34 min building and verifying the backend (first push at 03:14), ~29 min adding the Claude Code tooling in `.claude/`                                                                                                     |
+| 1    | 2026-10-03 03:49 | 2026-10-03 04:15 | 26 min   | ~15 min building and testing the assistant (incl. two live eval runs and a fix found by them), ~11 min clean-clone verification and finishing                                                                                                             |
+| 2    | 2026-10-03 04:18 | 2026-10-03 05:14 | 56 min   | ~15 min order tools, propose/confirm and tests; ~12 min UI redesign (on request); ~15 min guest checkout (on request); ~14 min security review, its fixes, live evals and clean-clone check. Commit, tag, push and sync came after 05:14 (see transcript) |
 
 **Note on Task 0's history:** `task-0` was first pushed at 03:14. I then decided the Claude Code
 tooling was part of the foundation, so I amended the commit and re-pushed `main` and the `task-0`

@@ -38,7 +38,9 @@ describe('broken object level authorization (OWASP API1)', () => {
 
   it('a customer cannot place an order on behalf of someone else (mass assignment)', async () => {
     const id = await productIdBySku(db, 'AUD-HP-001');
-    const bob = await db.customer.findUniqueOrThrow({ where: { email: 'bob@example.com' } });
+    const bob = await db.customer.findFirstOrThrow({
+      where: { email: 'bob@example.com', isGuest: false },
+    });
     await request(app)
       .post('/api/v1/orders')
       .set(bearer(ALICE))
@@ -171,6 +173,9 @@ describe('security misconfiguration (OWASP API8)', () => {
     expect(res.headers['x-powered-by']).toBeUndefined();
     expect(res.headers['x-content-type-options']).toBe('nosniff');
     expect(res.headers['content-security-policy']).toContain("default-src 'self'");
+    expect(res.headers['content-security-policy']).toContain("script-src 'self'");
+    // Off on purpose: the app is served over plain HTTP (see decisions D27).
+    expect(res.headers['content-security-policy']).not.toContain('upgrade-insecure-requests');
   });
 
   it('unknown routes return a problem document, never a stack trace', async () => {

@@ -30,6 +30,7 @@ export default tseslint.config(
       '@typescript-eslint/no-unsafe-return': 'off',
     },
   },
+  { files: ['web/src/**/*.tsx', 'web/src/**/*.ts'], languageOptions: { globals: globals.browser } },
   { files: ['**/*.js'], ...tseslint.configs.disableTypeChecked },
   prettier,
 );

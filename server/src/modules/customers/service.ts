@@ -16,13 +16,34 @@ export class CustomerService {
   constructor(private readonly db: Db) {}
 
   async create(input: CreateCustomerInput): Promise<{ customer: CustomerDto; token: string }> {
-    const existing = await this.db.customer.findUnique({ where: { email: input.email } });
+    const existing = await this.db.customer.findFirst({
+      where: { email: input.email, isGuest: false },
+    });
     if (existing) throw problems.conflict('duplicate-email', 'Email already registered');
     const { token, hash, prefix } = generateCustomerToken();
     const customer = await this.db.customer.create({
       data: { email: input.email, name: input.name, tokenHash: hash, tokenPrefix: prefix },
     });
     return { customer: toCustomerDto(customer), token };
+  }
+
+  /**
+   * Creates or updates the guest behind an anonymous chat checkout. Guests get no token: they act
+   * only through the conversation they ordered in. `guestId` is that conversation's existing guest.
+   */
+  async saveGuest(input: CreateCustomerInput, guestId: string | null): Promise<string> {
+    if (guestId) {
+      const { count } = await this.db.customer.updateMany({
+        where: { id: guestId, isGuest: true },
+        data: { email: input.email, name: input.name },
+      });
+      if (count === 1) return guestId;
+    }
+    const guest = await this.db.customer.create({
+      data: { email: input.email, name: input.name, isGuest: true },
+      select: { id: true },
+    });
+    return guest.id;
   }
 
   async get(id: string): Promise<CustomerDto> {

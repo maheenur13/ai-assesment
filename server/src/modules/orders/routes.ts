@@ -4,7 +4,7 @@ import { paginationQuery } from '../../http/pagination.js';
 import { problems } from '../../http/problem.js';
 import { parse } from '../../http/validate.js';
 import { idParam } from '../shared.js';
-import { createOrderBody, idempotencyKeySchema } from './schemas.js';
+import { createOrderBody, guestConfirmBody, idempotencyKeySchema } from './schemas.js';
 import type { OrderService } from './service.js';
 
 export function orderRoutes(orders: OrderService): Router {
@@ -41,6 +41,36 @@ export function orderRoutes(orders: OrderService): Router {
 
   router.get('/:id', async (req, res) => {
     res.json(await orders.get(customerIdOf(req.auth), idParam(req.params.id, 'Order')));
+  });
+
+  return router;
+}
+
+/** The customer's explicit confirmation of an order the assistant proposed (Task 2). */
+export function proposalRoutes(orders: OrderService): Router {
+  const router = Router();
+
+  // Customers confirm with their token; guests (no token) with the conversation they ordered in.
+  router.post('/:id/confirm', async (req, res) => {
+    if (req.auth?.role === 'operator') throw problems.forbidden();
+    const proposalId = idParam(req.params.id, 'Order proposal');
+    const result = req.auth
+      ? await orders.confirmProposal(customerIdOf(req.auth), proposalId)
+      : await orders.confirmGuestProposal(
+          parse(guestConfirmBody, req.body ?? {}, 'body').conversationId,
+          proposalId,
+        );
+    req.log.info(
+      {
+        event: result.replayed ? 'proposal.replayed' : 'proposal.confirmed',
+        proposalId,
+        orderId: result.body.id,
+        via: req.auth ? 'api' : 'api-guest',
+      },
+      'order proposal confirmed',
+    );
+    if (result.replayed) res.setHeader('Idempotent-Replayed', 'true');
+    res.status(result.status).location(`/api/v1/orders/${result.body.id}`).json(result.body);
   });
 
   return router;

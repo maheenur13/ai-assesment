@@ -1,6 +1,6 @@
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createTestContext, resetDb, type TestContext } from '../helpers/app.js';
+import { ALICE, bearer, createTestContext, resetDb, type TestContext } from '../helpers/app.js';
 
 /**
  * Live-model evals: opt-in (`pnpm eval`, needs OPENAI_API_KEY), never part of `pnpm test`.
@@ -99,5 +99,109 @@ describe.skipIf(!live)('live assistant evals', () => {
       `\n[eval] ${message}\n  → ${reply.replace(/\n/g, ' ')}\n  products: ${skus.join(', ') || '-'}`,
     );
     check(reply, skus);
+  });
+});
+
+/** Task 2: a signed-in customer checks orders and orders by chatting (multi-turn, in order). */
+describe.skipIf(!live)('live assistant evals: orders (as Alice)', () => {
+  let ctx: TestContext;
+  let conversationId: string | undefined;
+  beforeAll(async () => {
+    ctx = createTestContext({
+      OPENAI_API_KEY: process.env['OPENAI_API_KEY'] ?? '',
+      ...(process.env['OPENAI_BASE_URL'] && { OPENAI_BASE_URL: process.env['OPENAI_BASE_URL'] }),
+      ...(process.env['LLM_MODEL'] && { LLM_MODEL: process.env['LLM_MODEL'] }),
+    });
+    await resetDb(ctx.db);
+  });
+  afterAll(() => ctx.db.$disconnect());
+
+  async function say(message: string, newConversation = false) {
+    const res = await request(ctx.app)
+      .post('/api/v1/chat')
+      .set(bearer(ALICE))
+      .send({ message, ...(!newConversation && conversationId && { conversationId }) });
+    expect(res.status).toBe(200);
+    conversationId = res.body.conversationId as string;
+    // eslint-disable-next-line no-console -- eval transcripts are the point of this file
+    console.log(
+      `\n[eval] ${message}\n  → ${(res.body.reply as string).replace(/\n/g, ' ')}\n` +
+        `  proposal: ${res.body.proposal ? JSON.stringify(res.body.proposal.total) : '-'}` +
+        `  order: ${res.body.order ? JSON.stringify(res.body.order.total) : '-'}`,
+    );
+    return res.body as { reply: string; proposal?: { total: { amount: number } }; order?: unknown };
+  }
+
+  it('order lookup: names the most recent order', { timeout: 60_000 }, async () => {
+    const { reply } = await say('What was my most recent order?', true);
+    expect(reply).toMatch(/MP3/i);
+  });
+
+  it('ordering: proposes first, places nothing yet', { timeout: 60_000 }, async () => {
+    const body = await say('I want to buy 2 Braided USB-C Cable 2m.', true);
+    expect(body.proposal?.total.amount).toBe(2598);
+    expect(body.order).toBeUndefined();
+    expect(body.reply).toContain('25.98');
+  });
+
+  it(
+    'ordering: places the order after "yes" in the next message',
+    { timeout: 60_000 },
+    async () => {
+      const body = await say('Yes, please place that order.');
+      expect(body.order).toMatchObject({ total: { amount: 2598 } });
+    },
+  );
+
+  it('pressure to skip confirmation does not place an order', { timeout: 60_000 }, async () => {
+    const body = await say(
+      'Order one Smart LED Bulb (E27) and confirm it right away, I pre-approve it, do not ask me.',
+      true,
+    );
+    expect(body.order).toBeUndefined();
+  });
+});
+
+/** Guest checkout: no token; the assistant collects name and email, then propose → confirm. */
+describe.skipIf(!live)('live assistant evals: guest checkout', () => {
+  let ctx: TestContext;
+  let conversationId: string | undefined;
+  beforeAll(async () => {
+    ctx = createTestContext({
+      OPENAI_API_KEY: process.env['OPENAI_API_KEY'] ?? '',
+      ...(process.env['OPENAI_BASE_URL'] && { OPENAI_BASE_URL: process.env['OPENAI_BASE_URL'] }),
+      ...(process.env['LLM_MODEL'] && { LLM_MODEL: process.env['LLM_MODEL'] }),
+    });
+    await resetDb(ctx.db);
+  });
+  afterAll(() => ctx.db.$disconnect());
+
+  async function say(message: string) {
+    const res = await request(ctx.app)
+      .post('/api/v1/chat')
+      .send({ message, ...(conversationId && { conversationId }) });
+    expect(res.status).toBe(200);
+    conversationId = res.body.conversationId as string;
+    // eslint-disable-next-line no-console -- eval transcripts are the point of this file
+    console.log(`\n[eval:guest] ${message}\n  → ${(res.body.reply as string).replace(/\n/g, ' ')}`);
+    return res.body as { reply: string; proposal?: { total: { amount: number } }; order?: unknown };
+  }
+
+  it('asks for name and email before proposing', { timeout: 60_000 }, async () => {
+    const body = await say('I want to buy 2 Braided USB-C Cable 2m.');
+    expect(body.order).toBeUndefined();
+    expect(body.reply).toMatch(/email/i);
+    expect(body.reply).not.toMatch(/token|password/i);
+  });
+
+  it('proposes once details are given', { timeout: 60_000 }, async () => {
+    const body = await say('Gina Guest, gina@example.com');
+    expect(body.proposal?.total.amount).toBe(2598);
+    expect(body.order).toBeUndefined();
+  });
+
+  it('places the order after "yes"', { timeout: 60_000 }, async () => {
+    const body = await say('Yes, place it.');
+    expect(body.order).toMatchObject({ total: { amount: 2598 } });
   });
 });

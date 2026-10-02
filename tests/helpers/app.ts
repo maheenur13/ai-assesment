@@ -1,10 +1,12 @@
 import type { Express } from 'express';
 import { pino } from 'pino';
+import request from 'supertest';
 import { createApp } from '../../server/src/app.js';
 import type { Llm } from '../../server/src/assistant/llm.js';
 import { loadConfig, type Config } from '../../server/src/config.js';
 import { createDb, type Db } from '../../server/src/db.js';
 import { seed } from '../../server/src/seed.js';
+import { callTool, say, type FakeLlm } from './fake-llm.js';
 
 export const OPERATOR_TOKEN = 'test-operator-token-0123456789-abcdefghij';
 export const ALICE = 'shop_demo_alice_0000000000000000000000000000000000000000';
@@ -36,14 +38,14 @@ export function createTestContext(
     ...overrides,
   });
   const db = createDb(url);
-  const logger = pino({ level: 'silent' });
+  const logger = pino({ level: process.env['TEST_LOG'] ?? 'silent' });
   return { app: createApp({ config, db, logger, ...(llm && { llm }) }), db, config };
 }
 
 /** Empties every table and reloads fixtures: each test starts from the same known state. */
 export async function resetDb(db: Db): Promise<void> {
   await db.$executeRawUnsafe(
-    'TRUNCATE conversations, idempotency_records, order_items, orders, customers, products RESTART IDENTITY CASCADE',
+    'TRUNCATE order_proposals, conversations, idempotency_records, order_items, orders, customers, products RESTART IDENTITY CASCADE',
   );
   await seed(db);
 }
@@ -51,4 +53,20 @@ export async function resetDb(db: Db): Promise<void> {
 export async function productIdBySku(db: Db, sku: string): Promise<string> {
   const p = await db.product.findUniqueOrThrow({ where: { sku }, select: { id: true } });
   return p.id;
+}
+
+/** One chat turn in which the (fake) model proposes `items`; returns the conversation and proposal. */
+export async function proposeViaChat(
+  app: Express,
+  llm: FakeLlm,
+  token: string,
+  items: { productId: string; quantity: number }[],
+): Promise<{ conversationId: string; proposalId: string }> {
+  llm.script(callTool('propose_order', { items }), say('Shall I place it?'));
+  const res = await request(app)
+    .post('/api/v1/chat')
+    .set(bearer(token))
+    .send({ message: 'I want to order' })
+    .expect(200);
+  return { conversationId: res.body.conversationId, proposalId: res.body.proposal.id };
 }

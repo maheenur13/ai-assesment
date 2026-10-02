@@ -58,10 +58,9 @@ export async function seed(db: Db, dir = path.resolve('fixtures/seed')): Promise
       ).map((p) => [p.sku, p]),
     );
     const customerByEmail = new Map(
-      (await tx.customer.findMany({ select: { id: true, email: true } })).map((c) => [
-        c.email,
-        c.id,
-      ]),
+      (
+        await tx.customer.findMany({ where: { isGuest: false }, select: { id: true, email: true } })
+      ).map((c) => [c.email, c.id]),
     );
 
     // Historical orders: snapshots only, stock is not decremented.

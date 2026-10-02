@@ -1,7 +1,7 @@
 import request from 'supertest';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { LlmError } from '../../server/src/assistant/llm.js';
-import { SYSTEM_PROMPT, trimHistory } from '../../server/src/assistant/service.js';
+import { GUEST_NOTE, SYSTEM_PROMPT, trimHistory } from '../../server/src/assistant/service.js';
 import { ALICE, bearer, createTestContext, productIdBySku, resetDb } from '../helpers/app.js';
 import { callTool, FakeLlm, say } from '../helpers/fake-llm.js';
 
@@ -34,14 +34,38 @@ describe('POST /api/v1/chat — catalog answers', () => {
     expect(toolResult.products[0]).toMatchObject({ sku: 'AUD-HP-001', price: '129.99 USD' });
   });
 
-  it('sends the grounding system prompt and the tool definitions on every call', async () => {
+  it('gives anonymous callers the guest checkout tool, and tells the model they are a guest', async () => {
     llm.script(say('Hello! What are you looking for?'));
     await chat({ message: 'hi' }).expect(200);
     const [req] = llm.requests;
-    expect(req?.messages[0]).toEqual({ role: 'system', content: SYSTEM_PROMPT });
+    expect(req?.messages[0]).toEqual({
+      role: 'system',
+      content: `${SYSTEM_PROMPT}\n${GUEST_NOTE}`,
+    });
     expect(req?.tools.map((t) => t.function.name).sort()).toEqual([
+      'confirm_order',
+      'get_my_order',
       'get_product',
       'list_categories',
+      'list_my_orders',
+      'propose_order',
+      'search_products',
+      'set_guest_details',
+    ]);
+  });
+
+  it('gives signed-in customers the order tools but no guest checkout', async () => {
+    llm.script(say('Hello!'));
+    await chat({ message: 'hi' }).set(bearer(ALICE)).expect(200);
+    const [req] = llm.requests;
+    expect(req?.messages[0]).toEqual({ role: 'system', content: SYSTEM_PROMPT });
+    expect(req?.tools.map((t) => t.function.name).sort()).toEqual([
+      'confirm_order',
+      'get_my_order',
+      'get_product',
+      'list_categories',
+      'list_my_orders',
+      'propose_order',
       'search_products',
     ]);
   });

@@ -18,6 +18,7 @@ FROM base AS runtime
 ENV NODE_ENV=production
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
+COPY --from=build /app/web/dist ./web/dist
 COPY package.json prisma.config.ts ./
 COPY server/prisma ./server/prisma
 COPY fixtures ./fixtures
