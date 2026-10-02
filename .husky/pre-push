@@ -1,0 +1,2 @@
+# Integration tests need Postgres: docker compose up -d db
+pnpm test

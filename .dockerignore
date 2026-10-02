@@ -1,0 +1,12 @@
+.git
+.husky
+node_modules
+dist
+coverage
+tests
+web/dist
+server/src/generated
+.env
+.env.*
+!.env.example
+*.log

@@ -1,0 +1,91 @@
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Catalog item. `sku` is the business key used for idempotent bulk import (Task 3).
+/// CHECK constraints (price > 0, stock >= 0) live in the migration SQL.
+model Product {
+  id          String      @id @default(uuid()) @db.Uuid
+  sku         String      @unique
+  name        String
+  description String      @default("")
+  category    String
+  priceCents  Int         @map("price_cents")
+  stock       Int
+  isActive    Boolean     @default(true) @map("is_active")
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  orderItems  OrderItem[]
+
+  @@index([category])
+  @@index([createdAt, id])
+  @@map("products")
+}
+
+/// Customers authenticate with an opaque API token; only its SHA-256 hash is stored.
+model Customer {
+  id                 String              @id @default(uuid()) @db.Uuid
+  email              String              @unique
+  name               String
+  tokenHash          String              @unique @map("token_hash")
+  tokenPrefix        String              @map("token_prefix")
+  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  orders             Order[]
+  idempotencyRecords IdempotencyRecord[]
+
+  @@map("customers")
+}
+
+enum OrderStatus {
+  placed
+}
+
+model Order {
+  id         String      @id @default(uuid()) @db.Uuid
+  customerId String      @map("customer_id") @db.Uuid
+  status     OrderStatus @default(placed)
+  totalCents Int         @map("total_cents")
+  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  customer   Customer    @relation(fields: [customerId], references: [id])
+  items      OrderItem[]
+
+  @@index([customerId, createdAt, id])
+  @@map("orders")
+}
+
+/// Name and unit price are snapshotted so later catalog edits never rewrite order history.
+model OrderItem {
+  id             String  @id @default(uuid()) @db.Uuid
+  orderId        String  @map("order_id") @db.Uuid
+  productId      String  @map("product_id") @db.Uuid
+  productName    String  @map("product_name")
+  unitPriceCents Int     @map("unit_price_cents")
+  quantity       Int
+  order          Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product        Product @relation(fields: [productId], references: [id])
+
+  @@unique([orderId, productId])
+  @@map("order_items")
+}
+
+/// Stored responses for the Idempotency-Key header (IETF draft-ietf-httpapi-idempotency-key-header).
+model IdempotencyRecord {
+  id             String   @id @default(uuid()) @db.Uuid
+  customerId     String   @map("customer_id") @db.Uuid
+  key            String
+  requestHash    String   @map("request_hash")
+  responseStatus Int      @map("response_status")
+  responseBody   Json     @map("response_body")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  customer       Customer @relation(fields: [customerId], references: [id])
+
+  @@unique([customerId, key])
+  @@map("idempotency_records")
+}

@@ -1,0 +1,195 @@
+[
+  {
+    "sku": "AUD-HP-001",
+    "name": "Aurora Wireless Headphones",
+    "description": "Over-ear Bluetooth 5.3 headphones with active noise cancellation, 40-hour battery and USB-C fast charging.",
+    "category": "Audio",
+    "priceCents": 12999,
+    "stock": 25
+  },
+  {
+    "sku": "AUD-EB-002",
+    "name": "Pebble True Wireless Earbuds",
+    "description": "Compact earbuds with IPX5 water resistance, 8 hours per charge plus 24 hours in the case.",
+    "category": "Audio",
+    "priceCents": 5999,
+    "stock": 60
+  },
+  {
+    "sku": "AUD-SP-003",
+    "name": "Boom Mini Bluetooth Speaker",
+    "description": "Pocket-sized waterproof (IP67) speaker with 12-hour battery and a carabiner clip.",
+    "category": "Audio",
+    "priceCents": 3499,
+    "stock": 40
+  },
+  {
+    "sku": "AUD-SB-004",
+    "name": "Studio Soundbar 2.1",
+    "description": "2.1 channel soundbar with wireless subwoofer, HDMI eARC and Dolby Audio.",
+    "category": "Audio",
+    "priceCents": 24900,
+    "stock": 8
+  },
+  {
+    "sku": "CMP-KB-001",
+    "name": "Tactile Mechanical Keyboard",
+    "description": "75% layout mechanical keyboard with hot-swappable brown switches and white backlight. US layout.",
+    "category": "Computing",
+    "priceCents": 8900,
+    "stock": 30
+  },
+  {
+    "sku": "CMP-MS-002",
+    "name": "Glide Ergonomic Mouse",
+    "description": "Vertical ergonomic wireless mouse, 6 buttons, silent clicks, rechargeable.",
+    "category": "Computing",
+    "priceCents": 3900,
+    "stock": 45
+  },
+  {
+    "sku": "CMP-MN-003",
+    "name": "ClearView 27\" 4K Monitor",
+    "description": "27-inch IPS 4K UHD monitor, 60Hz, USB-C with 65W power delivery, height-adjustable stand.",
+    "category": "Computing",
+    "priceCents": 32900,
+    "stock": 6
+  },
+  {
+    "sku": "CMP-HB-004",
+    "name": "7-in-1 USB-C Hub",
+    "description": "USB-C hub with HDMI 4K, 3x USB-A, SD/microSD readers and 100W pass-through charging.",
+    "category": "Computing",
+    "priceCents": 4499,
+    "stock": 70
+  },
+  {
+    "sku": "CMP-SSD-005",
+    "name": "Portable SSD 1TB",
+    "description": "Pocket portable solid-state drive, up to 1050 MB/s over USB-C, shock resistant.",
+    "category": "Computing",
+    "priceCents": 9999,
+    "stock": 0
+  },
+  {
+    "sku": "CMP-WC-006",
+    "name": "HD Webcam 1080p",
+    "description": "1080p webcam with dual microphones, auto light correction and a privacy shutter.",
+    "category": "Computing",
+    "priceCents": 4999,
+    "stock": 22
+  },
+  {
+    "sku": "PHN-CH-001",
+    "name": "65W GaN Charger",
+    "description": "Compact 3-port (2x USB-C, 1x USB-A) gallium nitride wall charger, 65W total.",
+    "category": "Phone Accessories",
+    "priceCents": 3999,
+    "stock": 80
+  },
+  {
+    "sku": "PHN-PB-002",
+    "name": "PowerCell 20000mAh Power Bank",
+    "description": "20000mAh power bank with 22.5W fast charging, charges two devices at once.",
+    "category": "Phone Accessories",
+    "priceCents": 4599,
+    "stock": 35
+  },
+  {
+    "sku": "PHN-CS-003",
+    "name": "Rugged Phone Case",
+    "description": "Shock-absorbing case with raised edges, compatible with most 6.1-inch phones.",
+    "category": "Phone Accessories",
+    "priceCents": 1999,
+    "stock": 120
+  },
+  {
+    "sku": "PHN-CB-004",
+    "name": "Braided USB-C Cable 2m",
+    "description": "Nylon braided USB-C to USB-C cable, 2 metres, 100W, rated for 10,000 bends.",
+    "category": "Phone Accessories",
+    "priceCents": 1299,
+    "stock": 200
+  },
+  {
+    "sku": "HOM-LB-001",
+    "name": "Smart LED Bulb (E27)",
+    "description": "Wi-Fi colour smart bulb, 9W (60W equivalent), works with voice assistants. No hub needed.",
+    "category": "Smart Home",
+    "priceCents": 1499,
+    "stock": 150
+  },
+  {
+    "sku": "HOM-PL-002",
+    "name": "Smart Plug with Energy Monitor",
+    "description": "Wi-Fi smart plug with schedules and real-time energy monitoring, 16A max.",
+    "category": "Smart Home",
+    "priceCents": 1799,
+    "stock": 90
+  },
+  {
+    "sku": "HOM-CM-003",
+    "name": "Indoor Security Camera",
+    "description": "2K indoor camera with night vision, two-way audio and motion alerts. Local microSD or cloud storage.",
+    "category": "Smart Home",
+    "priceCents": 4999,
+    "stock": 18
+  },
+  {
+    "sku": "HOM-TH-004",
+    "name": "Smart Thermostat",
+    "description": "Learning thermostat with app control and weekly schedules. Requires a C-wire.",
+    "category": "Smart Home",
+    "priceCents": 14999,
+    "stock": 4
+  },
+  {
+    "sku": "WRB-SW-001",
+    "name": "Pulse Fitness Smartwatch",
+    "description": "Fitness smartwatch with heart-rate and SpO2 sensors, GPS, 7-day battery, 5ATM water resistance.",
+    "category": "Wearables",
+    "priceCents": 17900,
+    "stock": 15
+  },
+  {
+    "sku": "WRB-FB-002",
+    "name": "Stride Fitness Band",
+    "description": "Slim fitness band with step, sleep and heart-rate tracking, 14-day battery.",
+    "category": "Wearables",
+    "priceCents": 4900,
+    "stock": 50
+  },
+  {
+    "sku": "GAM-CT-001",
+    "name": "Nova Wireless Game Controller",
+    "description": "Wireless controller for PC and Android with Hall-effect sticks and 30-hour battery.",
+    "category": "Gaming",
+    "priceCents": 5499,
+    "stock": 28
+  },
+  {
+    "sku": "GAM-HS-002",
+    "name": "Arena Gaming Headset",
+    "description": "Wired gaming headset with 7.1 virtual surround, detachable mic, 3.5mm and USB.",
+    "category": "Gaming",
+    "priceCents": 6999,
+    "stock": 20
+  },
+  {
+    "sku": "GAM-MP-003",
+    "name": "XL Desk Mouse Pad",
+    "description": "900x400mm cloth mouse pad with stitched edges and non-slip rubber base.",
+    "category": "Gaming",
+    "priceCents": 1999,
+    "stock": 65
+  },
+  {
+    "sku": "LEG-MP3-001",
+    "name": "Classic MP3 Player",
+    "description": "Discontinued 8GB MP3 player. Kept for order history.",
+    "category": "Audio",
+    "priceCents": 2999,
+    "stock": 0,
+    "isActive": false
+  }
+]

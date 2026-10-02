@@ -1,0 +1,26 @@
+[
+  {
+    "id": "0b6a5d2e-6a39-4c55-9a35-6d8f6c3a1001",
+    "customerEmail": "alice@example.com",
+    "createdAt": "2026-09-14T10:15:00.000Z",
+    "items": [
+      { "sku": "AUD-HP-001", "quantity": 1 },
+      { "sku": "PHN-CB-004", "quantity": 2 }
+    ]
+  },
+  {
+    "id": "0b6a5d2e-6a39-4c55-9a35-6d8f6c3a1002",
+    "customerEmail": "alice@example.com",
+    "createdAt": "2026-09-28T16:40:00.000Z",
+    "items": [{ "sku": "LEG-MP3-001", "quantity": 1 }]
+  },
+  {
+    "id": "0b6a5d2e-6a39-4c55-9a35-6d8f6c3a2001",
+    "customerEmail": "bob@example.com",
+    "createdAt": "2026-09-20T08:05:00.000Z",
+    "items": [
+      { "sku": "CMP-KB-001", "quantity": 1 },
+      { "sku": "CMP-MS-002", "quantity": 1 }
+    ]
+  }
+]

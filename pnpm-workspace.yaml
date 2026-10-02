@@ -1,0 +1,12 @@
+# Single-package repo; this file only carries pnpm settings.
+# Supply-chain hardening: ignore releases younger than 24h, run install scripts only for allowlisted packages.
+minimumReleaseAge: 1440
+onlyBuiltDependencies:
+  - '@prisma/engines'
+  - esbuild
+  - prisma
+# Patched transitive deps of the prisma CLI (pnpm audit, 2026-10-03). Neither is reachable from
+# request input (mysql2 is unused; deepmerge-ts only merges our own config) but we patch anyway.
+overrides:
+  mysql2: '>=3.23.1'
+  deepmerge-ts: '>=8.0.0'

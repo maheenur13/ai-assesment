@@ -1,0 +1,12 @@
+node_modules/
+dist/
+coverage/
+server/src/generated/
+web/dist/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+.claude/settings.local.json
+CLAUDE.local.md

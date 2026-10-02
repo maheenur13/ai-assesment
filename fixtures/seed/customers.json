@@ -1,0 +1,17 @@
+[
+  {
+    "email": "alice@example.com",
+    "name": "Alice Andersson",
+    "token": "shop_demo_alice_0000000000000000000000000000000000000000"
+  },
+  {
+    "email": "bob@example.com",
+    "name": "Bob Berg",
+    "token": "shop_demo_bob_00000000000000000000000000000000000000000000"
+  },
+  {
+    "email": "carol@example.com",
+    "name": "Carol Chen",
+    "token": "shop_demo_carol_000000000000000000000000000000000000000000"
+  }
+]
