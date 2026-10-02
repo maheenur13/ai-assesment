@@ -13,6 +13,7 @@ import {
   updateProductBody,
 } from './modules/products/schemas.js';
 import { paginationQuery } from './http/pagination.js';
+import { chatBody, chatResponse } from './assistant/routes.js';
 
 /** OpenAPI 3.1 document generated from the same zod schemas that validate requests. */
 export function buildOpenApiDocument(): unknown {
@@ -151,6 +152,24 @@ export function buildOpenApiDocument(): unknown {
     security: secured,
     request: { params: idParams },
     responses: { 200: json(orderSchema, 'The order'), 404: problemResponse('Not found') },
+  });
+
+  registry.registerPath({
+    method: 'post',
+    path: '/api/v1/chat',
+    summary: 'Ask the shopping assistant (anonymous or customer)',
+    description:
+      'Answers come only from catalog tools. Conversations are bound to the caller: an ' +
+      "anonymous conversation can't be continued with a customer token and vice versa.",
+    request: { body: { content: { 'application/json': { schema: chatBody } } } },
+    responses: {
+      200: json(chatResponse, 'The reply and the products it is based on'),
+      404: problemResponse('Unknown conversation'),
+      409: problemResponse('Concurrent message on the same conversation'),
+      422: errors[422],
+      429: errors[429],
+      503: problemResponse('Assistant not configured or model provider unavailable'),
+    },
   });
 
   return new OpenApiGeneratorV31(registry.definitions).generateDocument({

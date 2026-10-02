@@ -3,6 +3,10 @@ import { apiReference } from '@scalar/express-api-reference';
 import express, { type Express } from 'express';
 import helmet from 'helmet';
 import { pinoHttp } from 'pino-http';
+import { OpenAiCompatibleLlm, type Llm } from './assistant/llm.js';
+import { assistantRoutes } from './assistant/routes.js';
+import { AssistantService } from './assistant/service.js';
+import { catalogTools } from './assistant/tools.js';
 import type { Config } from './config.js';
 import type { Db } from './db.js';
 import { authenticate } from './http/auth.js';
@@ -21,11 +25,13 @@ export interface AppDeps {
   config: Config;
   db: Db;
   logger: Logger;
+  /** Overrides the configured model client (tests inject a scripted fake). */
+  llm?: Llm;
 }
 
 const REQUEST_ID = /^[A-Za-z0-9._-]{1,128}$/;
 
-export function createApp({ config, db, logger }: AppDeps): Express {
+export function createApp({ config, db, logger, llm }: AppDeps): Express {
   const app = express();
   app.disable('x-powered-by');
   app.locals['shuttingDown'] = false;
@@ -106,12 +112,29 @@ export function createApp({ config, db, logger }: AppDeps): Express {
   const products = new ProductService(db, config.STORE_CURRENCY);
   const customers = new CustomerService(db);
   const orders = new OrderService(db, config.STORE_CURRENCY);
+  const model =
+    llm ??
+    (config.OPENAI_API_KEY === undefined
+      ? undefined
+      : new OpenAiCompatibleLlm({
+          apiKey: config.OPENAI_API_KEY,
+          baseUrl: config.OPENAI_BASE_URL,
+          model: config.LLM_MODEL,
+        }));
+  const assistant = new AssistantService(db, model, catalogTools(products), {
+    timeoutMs: config.LLM_TIMEOUT_MS,
+  });
 
   api.use('/products', productRoutes(products));
   api.use(
     '/orders',
     createRateLimiter(config.ORDER_RATE_LIMIT_PER_MINUTE, 'orders'),
     orderRoutes(orders),
+  );
+  api.use(
+    '/chat',
+    createRateLimiter(config.CHAT_RATE_LIMIT_PER_MINUTE, 'chat'),
+    assistantRoutes(assistant),
   );
   api.use('/', customerRoutes(customers));
   app.use('/api/v1', api);

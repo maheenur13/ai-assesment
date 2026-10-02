@@ -12,6 +12,7 @@ cp .env.example .env           # once
 pnpm db:migrate && pnpm db:seed
 pnpm dev                       # http://localhost:3000, docs at /docs
 pnpm test                      # vitest + supertest against the shop_test database
+pnpm eval                      # opt-in live-model evals (real provider; needs OPENAI_API_KEY)
 pnpm lint && pnpm typecheck && pnpm format:check
 docker compose up --build      # full system from a clean clone (what reviewers run)
 ```
@@ -21,10 +22,13 @@ docker compose up --build      # full system from a clean clone (what reviewers 
 - `server/src/http/` cross-cutting HTTP concerns: problem+json errors, auth, pagination, rate limits.
 - `server/src/modules/<name>/{schemas,service,routes}.ts`: zod schemas (validation + OpenAPI),
   service = business logic (the only code that touches Prisma), routes = thin HTTP adapters.
+- `server/src/assistant/`: `llm.ts` (provider boundary), `tools.ts` (zod-typed tools → services),
+  `service.ts` (prompt, bounded tool loop, conversation storage), `routes.ts`.
 - `server/src/openapi.ts` registers every route; keep it in sync when adding endpoints.
 - `server/prisma/` schema + SQL migrations (CHECK constraints are hand-written in migration SQL).
 - `fixtures/seed/` deterministic demo data, loaded idempotently on every start.
-- `tests/api`, `tests/adversarial`: one file per area; each test resets the DB via `resetDb`.
+- `tests/api`, `tests/assistant`, `tests/adversarial`: one file per area; each test resets the DB
+  via `resetDb`. Assistant tests script `tests/helpers/fake-llm.ts`; `tests/evals` is live, opt-in.
 
 ## Rules
 

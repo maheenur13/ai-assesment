@@ -22,9 +22,12 @@ model Product {
   isActive    Boolean     @default(true) @map("is_active")
   createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  /// Generated full-text vector (name > category > description), maintained by Postgres.
+  search      Unsupported("tsvector")?
   orderItems  OrderItem[]
 
   @@index([category])
+  @@index([search], type: Gin)
   @@index([createdAt, id])
   @@map("products")
 }
@@ -39,6 +42,7 @@ model Customer {
   createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
   orders             Order[]
   idempotencyRecords IdempotencyRecord[]
+  conversations      Conversation[]
 
   @@map("customers")
 }
@@ -88,4 +92,20 @@ model IdempotencyRecord {
 
   @@unique([customerId, key])
   @@map("idempotency_records")
+}
+
+/// Assistant chat history, kept server-side so clients cannot forge tool results.
+/// `customerId` is null for anonymous chats; only the same principal may continue a conversation.
+/// `turn` is an optimistic-concurrency counter: concurrent turns on one conversation get a 409.
+model Conversation {
+  id         String    @id @default(uuid()) @db.Uuid
+  customerId String?   @map("customer_id") @db.Uuid
+  messages   Json      @default("[]")
+  turn       Int       @default(0)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("conversations")
 }

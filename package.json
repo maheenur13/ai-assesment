@@ -19,6 +19,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
+    "eval": "RUN_LIVE_EVALS=1 vitest run tests/evals",
     "prepare": "husky || true"
   },
   "lint-staged": {

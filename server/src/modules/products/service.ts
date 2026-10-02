@@ -25,6 +25,11 @@ export function toProductDto(p: Product, currency: string): ProductDto {
   };
 }
 
+export interface SearchFilters {
+  category?: string | undefined;
+  maxPriceCents?: number | undefined;
+}
+
 /** Catalog queries and operator writes. Shared by the REST API and (later) the assistant tools. */
 export class ProductService {
   constructor(
@@ -60,6 +65,46 @@ export class ProductService {
       take: query.limit + 1,
     });
     return page(rows, query.limit, (p) => toProductDto(p, this.currency));
+  }
+
+  /**
+   * Relevance-ranked full-text search over active products (used by the assistant). Words are
+   * OR-ed and stemmed, so "noise cancelling headphones" matches "noise cancellation"; an exact SKU
+   * also matches. The text is passed as a bound parameter, never interpolated into SQL.
+   */
+  async search(text: string, filters: SearchFilters = {}, limit = 8): Promise<ProductDto[]> {
+    const words =
+      text
+        .toLowerCase()
+        .match(/[\p{L}\p{N}]+/gu)
+        ?.slice(0, 12) ?? [];
+    if (words.length === 0) return [];
+    const tsQuery = words.join(' or ');
+    const ids = await this.db.$queryRaw<{ id: string }[]>`
+      SELECT id FROM products
+      WHERE is_active
+        AND (search @@ websearch_to_tsquery('english', ${tsQuery}) OR lower(sku) = ${text.trim().toLowerCase()})
+        AND (${filters.category ?? null}::text IS NULL OR lower(category) = lower(${filters.category ?? null}::text))
+        AND (${filters.maxPriceCents ?? null}::int IS NULL OR price_cents <= ${filters.maxPriceCents ?? null}::int)
+      ORDER BY ts_rank(search, websearch_to_tsquery('english', ${tsQuery})) DESC, name
+      LIMIT ${limit}`;
+    const rows = await this.db.product.findMany({ where: { id: { in: ids.map((r) => r.id) } } });
+    const byId = new Map(rows.map((p) => [p.id, p]));
+    return ids.flatMap(({ id }) => {
+      const p = byId.get(id);
+      return p ? [toProductDto(p, this.currency)] : [];
+    });
+  }
+
+  /** Active categories with product counts: lets the assistant answer "what do you sell?". */
+  async categories(): Promise<{ category: string; products: number }[]> {
+    const groups = await this.db.product.groupBy({
+      by: ['category'],
+      where: { isActive: true },
+      _count: { _all: true },
+      orderBy: { category: 'asc' },
+    });
+    return groups.map((g) => ({ category: g.category, products: g._count._all }));
   }
 
   async get(id: string, includeInactive = false): Promise<ProductDto> {

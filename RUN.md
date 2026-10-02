@@ -20,6 +20,9 @@ This builds the app, starts Postgres, applies migrations, loads the fixture data
 
 Ports 3000 and 127.0.0.1:55432 must be free. Demo tokens are listed in the README.
 
+**Assistant (optional):** export an OpenRouter key before starting: `read -s OPENAI_API_KEY && export OPENAI_API_KEY` (paste the key; it stays out of shell history).
+Without it everything runs and `POST /api/v1/chat` answers 503.
+
 **Clean state:** `docker compose down -v` deletes the database volume. The next `up` re-seeds it from
 `fixtures/`.
 
@@ -27,6 +30,7 @@ Ports 3000 and 127.0.0.1:55432 must be free. Demo tokens are listed in the READM
 
 ```sh
 docker compose up -d db && cp .env.example .env && pnpm install
-pnpm test        # 64 tests against the shop_test database
+pnpm test        # 105 tests against the shop_test database (no network, fake model)
+pnpm eval        # opt-in live-model evals (needs OPENAI_API_KEY)
 pnpm dev         # hot-reload server on :3000
 ```

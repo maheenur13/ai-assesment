@@ -1,5 +1,9 @@
 import { z } from 'zod';
 
+/** Compose passes unset variables as empty strings; treat those as absent. */
+const optional = <T extends z.ZodType>(schema: T) =>
+  z.preprocess((v) => (v === '' ? undefined : v), schema.optional());
+
 const configSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
@@ -12,6 +16,12 @@ const configSchema = z.object({
     .default('USD'),
   RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(300),
   ORDER_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(30),
+  CHAT_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(20),
+  // Assistant (OpenAI-compatible chat completions). Without a key the assistant answers 503.
+  OPENAI_API_KEY: optional(z.string().min(1)),
+  OPENAI_BASE_URL: optional(z.url()).transform((v) => v ?? 'https://openrouter.ai/api/v1'),
+  LLM_MODEL: optional(z.string().min(1)).transform((v) => v ?? 'anthropic/claude-haiku-4.5'),
+  LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(25_000),
 });
 
 export type Config = z.infer<typeof configSchema>;

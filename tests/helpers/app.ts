@@ -1,6 +1,7 @@
 import type { Express } from 'express';
 import { pino } from 'pino';
 import { createApp } from '../../server/src/app.js';
+import type { Llm } from '../../server/src/assistant/llm.js';
 import { loadConfig, type Config } from '../../server/src/config.js';
 import { createDb, type Db } from '../../server/src/db.js';
 import { seed } from '../../server/src/seed.js';
@@ -19,7 +20,10 @@ export interface TestContext {
   config: Config;
 }
 
-export function createTestContext(overrides: Partial<Record<string, string>> = {}): TestContext {
+export function createTestContext(
+  overrides: Partial<Record<string, string>> = {},
+  llm?: Llm,
+): TestContext {
   const url = process.env['TEST_DATABASE_URL'];
   if (!url) throw new Error('TEST_DATABASE_URL must be set');
   const config = loadConfig({
@@ -28,16 +32,18 @@ export function createTestContext(overrides: Partial<Record<string, string>> = {
     OPERATOR_TOKEN,
     RATE_LIMIT_PER_MINUTE: '10000',
     ORDER_RATE_LIMIT_PER_MINUTE: '10000',
+    CHAT_RATE_LIMIT_PER_MINUTE: '10000',
     ...overrides,
   });
   const db = createDb(url);
-  return { app: createApp({ config, db, logger: pino({ level: 'silent' }) }), db, config };
+  const logger = pino({ level: 'silent' });
+  return { app: createApp({ config, db, logger, ...(llm && { llm }) }), db, config };
 }
 
 /** Empties every table and reloads fixtures: each test starts from the same known state. */
 export async function resetDb(db: Db): Promise<void> {
   await db.$executeRawUnsafe(
-    'TRUNCATE idempotency_records, order_items, orders, customers, products RESTART IDENTITY CASCADE',
+    'TRUNCATE conversations, idempotency_records, order_items, orders, customers, products RESTART IDENTITY CASCADE',
   );
   await seed(db);
 }
